@@ -1,0 +1,372 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          Int      @id @default(autoincrement())
+  displayName String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Message {
+  id        Int      @id @default(autoincrement())
+  role      String // user | assistant | system
+  content   String
+  tokensIn  Int      @default(0)
+  tokensOut Int      @default(0)
+  createdAt DateTime @default(now())
+  auxiliary String? // JSON: { toolCalls, searchUsed, retrievalIds, moodSnapshot }
+
+  memories Memory[]
+
+  @@index([createdAt])
+}
+
+model Memory {
+  id                 Int      @id @default(autoincrement())
+  type               String // episodic | semantic | preference | insight | plan | relational | coding_preference | project_context | collaboration_history
+  text               String
+  importance         Float
+  embedding          String // JSON float[]
+  embeddingDimension Int      @default(3072) // Track embedding vector dimension
+  embeddingModel     String   @default("openai/text-embedding-3-large") // Track which model generated the embedding
+  privacy            String // public | private | ephemeral
+  conversationTurnId String? // Link all memories from same conversation turn
+  contextTags        String   @default("[]") // JSON array of topic/theme tags
+  summary            String? // AI-generated summary for compression
+  accessFrequency    Int      @default(0) // How many times this memory has been retrieved
+  avgRelevance       Float    @default(0.0) // Average relevance score when retrieved
+  isEvergreen        Boolean  @default(false) // Never decay - critically important
+  lastAccessedAt     DateTime @default(now())
+  sourceMessageId    Int?
+  createdAt          DateTime @default(now())
+
+  sourceMessage Message?        @relation(fields: [sourceMessageId], references: [id])
+  linksFrom     MemoryLink[]    @relation("FromMemory")
+  linksTo       MemoryLink[]    @relation("ToMemory")
+  clusters      MemoryCluster[] @relation("ClusterMemories")
+
+  @@index([importance])
+  @@index([lastAccessedAt])
+  @@index([conversationTurnId])
+  @@index([isEvergreen])
+  @@index([accessFrequency])
+}
+
+model MemoryLink {
+  id       Int    @id @default(autoincrement())
+  fromId   Int
+  toId     Int
+  relation String
+  weight   Float
+
+  from Memory @relation("FromMemory", fields: [fromId], references: [id], onDelete: Cascade)
+  to   Memory @relation("ToMemory", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@unique([fromId, toId, relation])
+}
+
+model MemoryCluster {
+  id          Int      @id @default(autoincrement())
+  label       String // AI-generated cluster name
+  description String? // AI-generated cluster description
+  centroid    String // JSON float[] - cluster center in embedding space
+  coherence   Float    @default(0.0) // How tightly grouped the cluster is
+  importance  Float    @default(0.5) // Average importance of memories in cluster
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  memories Memory[] @relation("ClusterMemories")
+
+  @@index([importance])
+  @@index([coherence])
+}
+
+model PendingMemory {
+  id               Int       @id @default(autoincrement())
+  userId           Int? // For multi-user support
+  userMessage      String
+  assistantMessage String
+  sourceMessageId  Int
+  privacy          String    @default("public")
+  retryCount       Int       @default(0)
+  lastError        String?
+  status           String    @default("pending") // pending | processing | failed | completed
+  thoughtGuidance  String? // JSON: Inner thought guidance for memory storage
+  createdAt        DateTime  @default(now())
+  lastAttemptAt    DateTime  @default(now())
+  nextRetryAt      DateTime?
+
+  @@index([status, nextRetryAt])
+  @@index([createdAt])
+}
+
+model MoodState {
+  id                Int      @id @default(autoincrement())
+  valence           Float // -1 to 1
+  arousal           Float // 0 to 1
+  stance            String
+  decayHalfLifeMins Int      @default(30)
+  lastUpdateAt      DateTime @default(now())
+}
+
+model Settings {
+  id                           Int       @id @default(autoincrement())
+  thoughtVerbosity             String    @default("medium") // low | medium | high
+  memoryPrivacyDefault         String    @default("public") // public | private | ephemeral
+  dreamSchedule                String? // cron or null
+  enableDiagnostics            Boolean   @default(true)
+  searchPreference             String    @default("auto") // auto | never | ask
+
+  conversationsSinceReflection Int       @default(0) // Persisted counter for micro-reflection
+  lastReflectionAt             DateTime? // Timestamp of last deep reflection
+  customSettings               String? // JSON: Flexible field for future settings
+  version                      Int       @default(1)
+  updatedAt                    DateTime  @updatedAt
+}
+
+model ToolActivity {
+  id              Int       @id @default(autoincrement())
+  tool            String // recall | search | summarize | evolve | embed | dream | classify | think | code_decide | code_generate
+  status          String // queued | running | done | error | cancelled
+  inputSummary    String
+  outputSummary   String?
+  error           String?
+  metadata        String? // JSON: Flexible field for tool-specific data
+  createdAt       DateTime  @default(now())
+  finishedAt      DateTime?
+  linkedMessageId Int?
+
+  @@index([createdAt])
+  @@index([tool, status])
+}
+
+model SearchResult {
+  id            Int      @id @default(autoincrement())
+  query         String
+  originalQuery String?
+  answer        String
+  citations     String // JSON string[]
+  synthesis     String
+  summary       String? // AI-generated ~500 word summary for context inclusion
+  model         String
+  metadata      String? // JSON: Flexible field for search-specific data
+  createdAt     DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([model])
+}
+
+model Job {
+  id        Int       @id @default(autoincrement())
+  type      String // dream | reindex | cleanup | backup
+  status    String // queued | running | done | error
+  payload   String? // JSON
+  result    String? // JSON: Job execution result
+  nextRunAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([type, status])
+  @@index([nextRunAt])
+}
+
+model DatabaseMetadata {
+  id             Int       @id @default(autoincrement())
+  schemaVersion  Int       @default(1)
+  appVersion     String    @default("1.0.0")
+  lastMigration  DateTime  @default(now())
+  lastBackup     DateTime?
+  totalMessages  Int       @default(0)
+  totalMemories  Int       @default(0)
+  customMetadata String? // JSON: Flexible field for future metadata
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model ServerLifecycle {
+  id              Int      @id @default(autoincrement())
+  eventType       String // startup | shutdown | crash
+  timestamp       DateTime @default(now())
+  systemTime      DateTime // System clock time for verification
+  uptimeSeconds   Int? // Uptime before shutdown (if applicable)
+  downtimeSeconds Int? // Calculated downtime since last shutdown
+  metadata        String? // JSON: version, process info, etc.
+
+  @@index([eventType, timestamp])
+}
+
+model ExtensionData {
+  id          Int      @id @default(autoincrement())
+  extensionId String   @unique
+  dataType    String // Type identifier for the extension
+  data        String // JSON: Flexible storage for any future extension
+  version     Int      @default(1)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([extensionId])
+  @@index([dataType])
+}
+
+model RelationshipState {
+  id           Int      @id @default(autoincrement())
+  userId       Int? // null for single-user mode
+  closeness    Float    @default(0.2)
+  trust        Float    @default(0.2)
+  flirtation   Float    @default(0.2)
+  boundaries   String? // JSON: { topics: string[], notes: string }
+  stage        String   @default("acquaintance")
+  lastUpdateAt DateTime @default(now())
+}
+
+model PersonaBelief {
+  id           Int      @id @default(autoincrement())
+  subject      String // self | user | world
+  statement    String
+  confidence   Float // 0..1
+  evidenceIds  String // JSON Int[] (Memory IDs)
+  lastUpdateAt DateTime @default(now())
+}
+
+model PersonaGoal {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String
+  category    String // learning | relationship | habit | craft
+  priority    Int      @default(3)
+  progress    Float    @default(0.0)
+  evidenceIds String // JSON Int[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PersonaEvolutionEvent {
+  id          Int      @id @default(autoincrement())
+  type        String // mood | belief | goal | relationship
+  target      String // e.g., belief id, goal id, metric
+  delta       Float?
+  rationale   String
+  evidenceIds String // JSON Int[]
+  metadata    String? // JSON: { before, after, prompt }
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([type])
+}
+
+model MoodHistory {
+  id        Int      @id @default(autoincrement())
+  valence   Float
+  arousal   Float
+  stance    String
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+
+
+// ========================================
+// COLLABORATE MODELS (Canvas-like feature)
+// ========================================
+
+model CollaborateDocument {
+  id              Int      @id @default(autoincrement())
+  sessionId       String   @unique
+  title           String
+  contentType     String   // text | code | mixed
+  language        String?  // For code: javascript, python, typescript, etc.
+  status          String   @default("active") // active | archived
+  metadata        String?  // JSON: { readingLevel, theme, project info }
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastAccessedAt  DateTime @default(now())
+  
+  versions        CollaborateVersion[]
+  suggestions     CollaborateSuggestion[]
+  comments        CollaborateComment[]
+  editHistory     CollaborateEdit[]
+
+  @@index([sessionId])
+  @@index([status])
+  @@index([lastAccessedAt])
+}
+
+model CollaborateVersion {
+  id          Int      @id @default(autoincrement())
+  documentId  Int
+  version     Int
+  content     String   // Full document content at this version
+  description String?  // User/system description of changes
+  evelynNote  String?  // Evelyn's commentary on this version
+  createdAt   DateTime @default(now())
+  createdBy   String   // 'user' | 'evelyn' | 'collaborative'
+  
+  document    CollaborateDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, version])
+}
+
+model CollaborateSuggestion {
+  id            Int       @id @default(autoincrement())
+  documentId    Int
+  type          String    // edit | improvement | alternative | grammar | style | optimization | bug_fix | refactor
+  category      String    // writing | code
+  title         String
+  description   String
+  originalText  String?   // Text being suggested for change
+  suggestedText String?   // Suggested replacement
+  lineStart     Int?
+  lineEnd       Int?
+  charStart     Int?
+  charEnd       Int?
+  confidence    Float     @default(0.8)
+  status        String    @default("pending") // pending | accepted | rejected | applied
+  evelynThought String?   // Evelyn's reasoning
+  createdAt     DateTime  @default(now())
+  appliedAt     DateTime?
+  
+  document      CollaborateDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, status])
+  @@index([type])
+}
+
+model CollaborateComment {
+  id         Int      @id @default(autoincrement())
+  documentId Int
+  author     String   // 'user' | 'evelyn'
+  content    String
+  lineStart  Int?
+  lineEnd    Int?
+  resolved   Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  
+  document   CollaborateDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, resolved])
+}
+
+model CollaborateEdit {
+  id           Int      @id @default(autoincrement())
+  documentId   Int
+  author       String   // 'user' | 'evelyn'
+  editType     String   // insert | delete | replace | format | shortcut
+  beforeText   String?
+  afterText    String?
+  position     String   // JSON: { line, char } or range
+  description  String?
+  shortcutType String?  // adjust_length | reading_level | add_polish | etc.
+  createdAt    DateTime @default(now())
+  
+  document     CollaborateDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId, createdAt])
+  @@index([author])
+}

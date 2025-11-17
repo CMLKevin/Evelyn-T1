@@ -1,0 +1,27 @@
+{
+  "name": "evelyn",
+  "version": "1.0.0",
+  "description": "Evelyn - Agentic AI Companion",
+  "private": true,
+  "workspaces": [
+    "server",
+    "web"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:web\"",
+    "dev:server": "cd server && npm run dev",
+    "dev:web": "cd web && npm run dev",
+    "build": "npm run build:server && npm run build:web",
+    "build:server": "cd server && npm run build",
+    "build:web": "cd web && npm run build",
+    "db:setup": "cd server && npm run db:generate && npm run db:push",
+    "install:all": "npm install && cd server && npm install && cd ../web && npm install"
+  },
+  "devDependencies": {
+    "@types/pdf-parse": "^1.1.5",
+    "concurrently": "^8.2.2"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0"
+  }
+}
