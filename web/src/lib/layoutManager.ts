@@ -1,6 +1,6 @@
 /**
  * Unified Layout Management System
- * Provides centralized control over canvas layout, persistence, and animations
+ * Provides centralized control over application layout, persistence, and animations
  */
 
 import { useState, useEffect } from 'react';
@@ -201,7 +201,7 @@ class LayoutManager {
 
   private loadState(): LayoutState {
     try {
-      const saved = localStorage.getItem('canvas-layout-state');
+      const saved = localStorage.getItem('layout-state');
       if (saved) {
         const parsed = JSON.parse(saved);
         return {
@@ -225,7 +225,7 @@ class LayoutManager {
 
   private saveState(): void {
     try {
-      localStorage.setItem('canvas-layout-state', JSON.stringify({
+      localStorage.setItem('layout-state', JSON.stringify({
         currentLayout: this.state.currentLayout,
         customLayouts: this.state.customLayouts
       }));

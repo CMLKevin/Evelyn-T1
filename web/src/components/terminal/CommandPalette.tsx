@@ -4,15 +4,12 @@ import {
   MessageSquare, 
   Activity, 
   ScrollText, 
-  Globe, 
   Trash2, 
   RefreshCw,
   Eye,
   EyeOff,
   Search,
   X,
-  Code2,
-  FileCode
 } from 'lucide-react';
 
 interface Command {
@@ -33,29 +30,14 @@ export default function CommandPalette() {
     toggleDiagnostics,
     showDiagnostics,
     setQuickSearchOpen,
-    canvasState,
-    loadCanvas,
   } = useStore();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Build commands array including projects
+  // Build commands array
   const commands: Command[] = [
-    // Project commands
-    ...canvasState.canvasList.map(canvas => ({
-      id: `project-${canvas.id}`,
-      label: canvas.title,
-      subtitle: `${canvas.codeType} • ${canvas.language} • ${canvas.files?.length || 0} files`,
-      icon: FileCode,
-      action: () => {
-        loadCanvas(canvas.id);
-        setActiveTab('chat');
-        setCommandPaletteOpen(false);
-      },
-      category: 'Projects',
-    })),
     // Navigation commands
     {
       id: 'nav-chat',

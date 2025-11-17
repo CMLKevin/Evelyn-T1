@@ -23,18 +23,6 @@ export const API_ENDPOINTS = {
   messages: `${API_BASE_URL}/api/messages`,
   messageById: (id: number) => `${API_BASE_URL}/api/messages/${id}`,
   
-  // Canvas
-  canvases: `${API_BASE_URL}/api/canvases`,
-  canvasById: (id: number) => `${API_BASE_URL}/api/canvas/${id}`,
-  canvasFiles: (id: number) => `${API_BASE_URL}/api/canvas/${id}/files`,
-  canvasAnalyze: (id: number) => `${API_BASE_URL}/api/canvas/${id}/analyze`,
-  canvasSearch: (id: number) => `${API_BASE_URL}/api/canvas/${id}/search`,
-  canvasCompletion: (id: number) => `${API_BASE_URL}/api/canvas/${id}/completion`,
-  canvasRecentChanges: (id: number) => `${API_BASE_URL}/api/canvas/${id}/recent-changes`,
-  canvasTestGenerate: (id: number) => `${API_BASE_URL}/api/canvas/${id}/test/generate`,
-  canvasTestRun: (id: number) => `${API_BASE_URL}/api/canvas/${id}/test/run`,
-  canvasRefactor: (id: number) => `${API_BASE_URL}/api/canvas/${id}/refactor`,
-  
   // Memories
   memories: `${API_BASE_URL}/api/memories`,
   memoryById: (id: number) => `${API_BASE_URL}/api/memories/${id}`,

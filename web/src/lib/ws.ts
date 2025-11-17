@@ -16,22 +16,15 @@ export function useWebSocket() {
         setLastMessage(data);
       };
 
-      // Listen for canvas-specific messages
-      socketRef.current.on('canvas:update', handleMessage);
-      socketRef.current.on('canvas:content_change', handleMessage);
-
       return () => {
-        if (socketRef.current) {
-          socketRef.current.off('canvas:update', handleMessage);
-          socketRef.current.off('canvas:content_change', handleMessage);
-        }
+        // Cleanup if needed
       };
     }
   }, []);
 
   const sendMessage = (data: any) => {
     if (socketRef.current?.connected) {
-      socketRef.current.emit('canvas:message', data);
+      socketRef.current.emit('message', data);
     }
   };
 
@@ -233,202 +226,6 @@ class WSClient {
       useStore.getState().setAgentError(data);
     });
 
-    // Code Canvas events
-    this.socket.on('canvas:created', (data: any) => {
-      console.log('[WS] Canvas created:', data);
-      useStore.getState().createCanvasFromSession(data);
-    });
-
-    this.socket.on('canvas:file:generated', (data: any) => {
-      console.log('[WS] Canvas file generated:', data);
-      const { canvasState } = useStore.getState();
-      if (canvasState.activeCanvas?.id === data.canvasId) {
-        useStore.getState().loadCanvas(data.canvasId);
-      }
-    });
-
-    this.socket.on('canvas:generation:progress', (data: any) => {
-      console.log('[WS] Canvas generation progress:', data);
-      useStore.getState().setGeneratingStatus(true, data.progress);
-    });
-
-    this.socket.on('canvas:generation:complete', (data: any) => {
-      console.log('[WS] Canvas generation complete:', data);
-      useStore.getState().setGeneratingStatus(false, null);
-      if (data.canvasId) {
-        useStore.getState().loadCanvas(data.canvasId);
-      }
-    });
-
-    this.socket.on('canvas:suggestion:created', (data: any) => {
-      console.log('[WS] Canvas suggestion created:', data);
-      const { canvasState } = useStore.getState();
-      if (canvasState.activeCanvas?.id === data.canvasId) {
-        useStore.getState().loadCanvas(data.canvasId);
-      }
-    });
-
-    this.socket.on('canvas:task:updated', (data: any) => {
-      console.log('[WS] Canvas task updated:', data);
-      const { canvasState } = useStore.getState();
-      if (canvasState.activeCanvas?.id === data.canvasId) {
-        useStore.getState().loadCanvas(data.canvasId);
-      }
-    });
-
-    this.socket.on('canvas:collaboration:created', (data: any) => {
-      console.log('[WS] Canvas collaboration created:', data);
-      const { canvasState } = useStore.getState();
-      if (canvasState.activeCanvas?.id === data.canvasId) {
-        useStore.getState().loadCanvas(data.canvasId);
-      }
-    });
-
-    // File status tracking events
-    this.socket.on('canvas:file:generating', (data: any) => {
-      console.log('[WS] File generating:', data);
-      useStore.getState().updateFileStatus(data.fileId, {
-        status: 'generating'
-      });
-    });
-
-    this.socket.on('canvas:file:updating', (data: any) => {
-      console.log('[WS] File updating:', data);
-      useStore.getState().updateFileStatus(data.fileId, {
-        status: 'updating',
-        linesAdded: data.linesAdded,
-        linesRemoved: data.linesRemoved
-      });
-    });
-
-    this.socket.on('canvas:file:complete', (data: any) => {
-      console.log('[WS] File complete:', data);
-      useStore.getState().updateFileStatus(data.fileId, {
-        status: 'complete',
-        linesAdded: data.linesAdded,
-        linesRemoved: data.linesRemoved
-      });
-      // Clear status after 30 seconds
-      setTimeout(() => {
-        useStore.getState().clearFileStatus(data.fileId);
-      }, 30000);
-    });
-
-    this.socket.on('canvas:file:error', (data: any) => {
-      console.log('[WS] File error:', data);
-      useStore.getState().updateFileStatus(data.fileId, {
-        status: 'error'
-      });
-    });
-
-    // Subtask phase tracking events
-    this.socket.on('subtask:planning', (data: any) => {
-      console.log('[WS] Subtask planning:', data);
-      window.dispatchEvent(new CustomEvent('subtask:phase:update', {
-        detail: { subtaskId: data.subtaskId, phase: 'planning', progress: 10, estimatedTimeMs: data.estimatedTimeMs }
-      }));
-    });
-
-    this.socket.on('subtask:generating', (data: any) => {
-      console.log('[WS] Subtask generating:', data);
-      window.dispatchEvent(new CustomEvent('subtask:phase:update', {
-        detail: { subtaskId: data.subtaskId, phase: 'generating', progress: 50, estimatedTimeMs: data.estimatedTimeMs }
-      }));
-    });
-
-    this.socket.on('subtask:applying', (data: any) => {
-      console.log('[WS] Subtask applying:', data);
-      window.dispatchEvent(new CustomEvent('subtask:phase:update', {
-        detail: { subtaskId: data.subtaskId, phase: 'applying', progress: 85, estimatedTimeMs: data.estimatedTimeMs }
-      }));
-    });
-
-    this.socket.on('subtask:completed', (data: any) => {
-      console.log('[WS] Subtask completed:', data);
-      window.dispatchEvent(new CustomEvent('subtask:phase:update', {
-        detail: { subtaskId: data.subtaskId, phase: 'complete', progress: 100 }
-      }));
-      const { canvasState } = useStore.getState();
-      if (canvasState.activeCanvas?.id === data.canvasId) {
-        useStore.getState().loadCanvas(data.canvasId);
-      }
-    });
-
-    this.socket.on('subtask:failed', (data: any) => {
-      console.log('[WS] Subtask failed:', data);
-      const { canvasState } = useStore.getState();
-      if (canvasState.activeCanvas?.id === data.canvasId) {
-        useStore.getState().loadCanvas(data.canvasId);
-      }
-    });
-
-    this.socket.on('subtask:progress', (data: any) => {
-      console.log('[WS] Subtask progress:', data);
-      window.dispatchEvent(new CustomEvent('subtask:phase:update', {
-        detail: { 
-          subtaskId: data.subtaskId, 
-          phase: data.phase, 
-          progress: data.progress,
-          estimatedTimeMs: data.estimatedTimeMs
-        }
-      }));
-    });
-
-    // Suggestion analyzing events
-    this.socket.on('suggestion:analyzing', (data: any) => {
-      console.log('[WS] Suggestion analyzing:', data);
-      window.dispatchEvent(new CustomEvent('suggestion:analyzing', {
-        detail: { 
-          canvasId: data.canvasId,
-          fileCount: data.fileCount,
-          progress: data.progress
-        }
-      }));
-    });
-
-    this.socket.on('suggestion:generated', (data: any) => {
-      console.log('[WS] Suggestion generated:', data);
-      window.dispatchEvent(new CustomEvent('suggestion:generated', {
-        detail: { 
-          canvasId: data.canvasId,
-          suggestion: data.suggestion,
-          tier: data.tier,
-          confidence: data.confidence
-        }
-      }));
-      const { canvasState } = useStore.getState();
-      if (canvasState.activeCanvas?.id === data.canvasId) {
-        useStore.getState().loadCanvas(data.canvasId);
-      }
-    });
-
-    // Generation phase change events
-    this.socket.on('generation:phase_change', (data: any) => {
-      console.log('[WS] Generation phase change:', data);
-      window.dispatchEvent(new CustomEvent('generation:phase_change', {
-        detail: { 
-          canvasId: data.canvasId,
-          phase: data.phase, // 'planning' | 'generating' | 'applying' | 'complete'
-          taskId: data.taskId,
-          subtaskId: data.subtaskId
-        }
-      }));
-    });
-
-    this.socket.on('generation:progress_update', (data: any) => {
-      console.log('[WS] Generation progress update:', data);
-      window.dispatchEvent(new CustomEvent('generation:progress_update', {
-        detail: { 
-          canvasId: data.canvasId,
-          taskId: data.taskId,
-          subtaskId: data.subtaskId,
-          progress: data.progress, // 0-100
-          currentOperation: data.currentOperation,
-          estimatedTimeRemainingMs: data.estimatedTimeRemainingMs
-        }
-      }));
-    });
-
     // ========================================
     // COLLABORATE FEATURE EVENTS
     // ========================================
@@ -627,11 +424,8 @@ class WSClient {
     this.lastSentMessage = content;
     this.lastSentTime = now;
     
-    // Get active canvas ID from store
-    const activeCanvasId = useStore.getState().canvasState.activeCanvas?.id;
-    
-    console.log('[WS] Sending message:', content.slice(0, 50) + '...', activeCanvasId ? `with canvas ${activeCanvasId}` : 'without canvas');
-    this.socket.emit('chat:send', { content, privacy, activeCanvasId });
+    console.log('[WS] Sending message:', content.slice(0, 50) + '...');
+    this.socket.emit('chat:send', { content, privacy });
   }
 
   subscribeDiagnostics() {

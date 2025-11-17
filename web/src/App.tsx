@@ -21,9 +21,7 @@ export default function App() {
     loadSearchResults, 
     loadActivities, 
     loadPersona,
-    loadCanvasList,
     uiState,
-    canvasState,
     setCommandPaletteOpen,
     setQuickSearchOpen,
     setSettingsModalOpen,
@@ -49,9 +47,6 @@ export default function App() {
     // Connect to WebSocket first, then load data
     wsClient.connect();
     initializeApp();
-    
-    // Load canvas list
-    loadCanvasList();
     
     // Don't disconnect on cleanup - let the wsClient manage its lifecycle
     // This prevents issues with React Strict Mode double-mounting

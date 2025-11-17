@@ -7,7 +7,7 @@ import { useStore } from '../../state/store';
 import { Brain, Sparkles } from 'lucide-react';
 
 export default function ChatWindow() {
-  const { connected, activities, canvasState } = useStore();
+  const { connected, activities } = useStore();
   const [elapsed, setElapsed] = useState(0);
 
   // Get latest thinking activity
@@ -42,7 +42,6 @@ export default function ChatWindow() {
   }, [latestThinking]);
 
   const isThinking = latestThinking?.status === 'running';
-  const hasCodeCanvas = canvasState.activeCanvas !== null;
 
   return (
     <div className="w-full h-full flex flex-col terminal-panel rounded overflow-hidden relative z-10">
@@ -57,8 +56,8 @@ export default function ChatWindow() {
             </span>
           </div>
           
-          {/* Compact Thinking Indicator - only show when Code Canvas is active */}
-          {hasCodeCanvas && isThinking && (
+          {/* Compact Thinking Indicator */}
+          {isThinking && (
             <div className="flex items-center gap-2 bg-purple-500/20 border border-purple-500/30 rounded px-2 py-1">
               <div className="relative">
                 <div className="absolute inset-0 bg-purple-400 rounded-full animate-ping opacity-75" />
