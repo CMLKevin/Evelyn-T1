@@ -71,10 +71,18 @@ export async function embed(text: string): Promise<number[]> {
     embeddingCache.set(truncatedText, embedding);
     return embedding;
   } catch (error) {
-    console.error('[Embeddings] Error generating embedding:', error);
+    if (error instanceof Error) {
+      const message = error.message || '';
+      if (message.includes('OpenRouter embedding auth error 401') || message.includes('OpenRouter chat auth error 401') || /401/.test(message)) {
+        console.error('[Embeddings] OpenRouter authentication/authorization error (likely invalid or unknown OPENROUTER_API_KEY):', message);
+        console.error('[Embeddings] Tip: Check your OPENROUTER_API_KEY in server/.env and visit /api/diagnostics/openrouter for more details.');
+      } else {
+        console.error('[Embeddings] Provider error generating embedding:', message);
+      }
+    } else {
+      console.error('[Embeddings] Unknown error generating embedding:', error);
+    }
     console.error('[Embeddings] Embedding service unavailable - system will continue without embeddings');
-    // Return null to signal embedding failure rather than throwing
-    // This allows the system to continue functioning without embeddings
     throw error;
   }
 }
@@ -119,7 +127,17 @@ export async function embedBatch(texts: string[]): Promise<number[][]> {
       embeddingCache.set(toEmbed[i], emb);
     });
     } catch (error) {
-      console.error('[Embeddings] Batch embedding error:', error);
+      if (error instanceof Error) {
+        const message = error.message || '';
+        if (message.includes('OpenRouter embedding auth error 401') || message.includes('OpenRouter chat auth error 401') || /401/.test(message)) {
+          console.error('[Embeddings] OpenRouter authentication/authorization error during batch embedding (likely invalid or unknown OPENROUTER_API_KEY):', message);
+          console.error('[Embeddings] Tip: Check your OPENROUTER_API_KEY in server/.env and visit /api/diagnostics/openrouter for more details.');
+        } else {
+          console.error('[Embeddings] Provider error during batch embedding:', message);
+        }
+      } else {
+        console.error('[Embeddings] Unknown error during batch embedding:', error);
+      }
       throw error;
     }
   }

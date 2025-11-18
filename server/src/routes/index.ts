@@ -3,6 +3,7 @@ import { Server } from 'socket.io';
 import { db } from '../db/client.js';
 import { setupRestoreRoutes } from './restore.js';
 import { setupBackupRoutes } from './backup.js';
+import { setupDiagnosticsRoutes } from './diagnostics.js';
 import collaborateRouter from './collaborate.js';
 import temporalEngine from '../core/temporalEngine.js';
 import { logger } from '../utils/logger.js';
@@ -13,6 +14,9 @@ export function setupRoutes(app: Express, io: Server) {
 
   // Setup backup routes
   setupBackupRoutes(app);
+
+  // Setup diagnostics routes
+  setupDiagnosticsRoutes(app);
 
   // Setup collaborate routes
   app.use(collaborateRouter);
