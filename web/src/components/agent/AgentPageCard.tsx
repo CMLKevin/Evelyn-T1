@@ -29,17 +29,17 @@ const AgentPageCard = memo(function AgentPageCard({
   const time = new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
   return (
-    <div className="bg-neutral-900 border border-neutral-800 rounded-lg overflow-hidden hover:border-neutral-700 transition-colors">
+    <div className="bg-terminal-900 border-2 border-white/20 overflow-hidden hover:border-white/30 transition-colors">
       {/* Header */}
       <div className="p-4 flex items-start gap-3">
         {/* Favicon */}
-        <div className="flex-shrink-0 w-8 h-8 bg-neutral-800 rounded flex items-center justify-center overflow-hidden">
+        <div className="flex-shrink-0 w-8 h-8 bg-terminal-black border border-white/20 flex items-center justify-center overflow-hidden">
           {favicon ? (
             <img src={favicon} alt="" className="w-5 h-5" onError={(e) => {
               e.currentTarget.style.display = 'none';
             }} />
           ) : (
-            <div className="w-4 h-4 bg-gradient-to-br from-cyan-500 to-blue-500 rounded-sm" />
+            <div className="w-4 h-4 bg-cyan-500" />
           )}
         </div>
 
@@ -60,7 +60,7 @@ const AgentPageCard = memo(function AgentPageCard({
           {screenshotBase64 && (
             <button
               onClick={() => setShowScreenshot(!showScreenshot)}
-              className="p-1.5 rounded hover:bg-neutral-800 transition-colors text-neutral-400 hover:text-neutral-200"
+              className="p-1.5 hover:bg-terminal-800 border border-white/20 hover:border-white/30 transition-colors text-terminal-400 hover:text-white"
               title="Toggle screenshot"
             >
               <ImageIcon className="w-4 h-4" />
@@ -70,14 +70,14 @@ const AgentPageCard = memo(function AgentPageCard({
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="p-1.5 rounded hover:bg-neutral-800 transition-colors text-neutral-400 hover:text-cyan-400"
+            className="p-1.5 hover:bg-terminal-800 border border-white/20 hover:border-cyan-500 transition-colors text-terminal-400 hover:text-cyan-500"
             title="Open in new tab"
           >
             <ExternalLink className="w-4 h-4" />
           </a>
           <button
             onClick={() => setExpanded(!expanded)}
-            className="p-1.5 rounded hover:bg-neutral-800 transition-colors text-neutral-400 hover:text-neutral-200"
+            className="p-1.5 hover:bg-terminal-800 border border-white/20 hover:border-white/30 transition-colors text-terminal-400 hover:text-white"
             title={expanded ? 'Collapse' : 'Expand'}
           >
             {expanded ? (
@@ -93,19 +93,19 @@ const AgentPageCard = memo(function AgentPageCard({
       {(evelynReaction || evelynThought) && (
         <div className="px-4 pb-3 space-y-2">
           {evelynReaction && (
-            <div className="bg-purple-900/20 border border-purple-700/30 rounded-lg p-3">
+            <div className="bg-orange/10 border-2 border-orange p-3">
               <div className="flex items-center gap-2 mb-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                <span className="text-xs text-purple-300 font-medium uppercase tracking-wide">Evelyn's Reaction</span>
+                <Sparkles className="w-3.5 h-3.5 text-orange" />
+                <span className="text-xs text-orange font-mono font-medium uppercase tracking-wide">Evelyn's Reaction</span>
               </div>
               <p className="text-neutral-200 text-sm italic">"{evelynReaction}"</p>
             </div>
           )}
           {evelynThought && (
-            <div className="bg-cyan-900/20 border border-cyan-700/30 rounded-lg p-3">
+            <div className="bg-cyan-500/10 border-2 border-cyan-500 p-3">
               <div className="flex items-center gap-2 mb-1.5">
-                <Brain className="w-3.5 h-3.5 text-cyan-400" />
-                <span className="text-xs text-cyan-300 font-medium uppercase tracking-wide">Evelyn's Thought Process</span>
+                <Brain className="w-3.5 h-3.5 text-cyan-500" />
+                <span className="text-xs text-cyan-500 font-mono font-medium uppercase tracking-wide">Evelyn's Thought Process</span>
               </div>
               <p className="text-neutral-200 text-sm">{evelynThought}</p>
             </div>
@@ -116,7 +116,7 @@ const AgentPageCard = memo(function AgentPageCard({
       {/* Screenshot */}
       {showScreenshot && screenshotBase64 && (
         <div className="px-4 pb-4">
-          <div className="relative rounded-lg overflow-hidden border border-neutral-700 bg-neutral-800">
+          <div className="relative overflow-hidden border-2 border-white/20 bg-terminal-black">
             <img
               src={screenshotBase64}
               alt="Page screenshot"
@@ -135,14 +135,14 @@ const AgentPageCard = memo(function AgentPageCard({
         <div className="space-y-2">
           {keyPoints.slice(0, expanded ? undefined : 3).map((point, idx) => (
             <div key={idx} className="flex items-start gap-2 text-sm">
-              <div className="w-1.5 h-1.5 rounded-full bg-cyan-500 mt-2 flex-shrink-0" />
+              <div className="w-1.5 h-1.5 bg-cyan-500 mt-2 flex-shrink-0" />
               <p className="text-neutral-300 flex-1">{point}</p>
             </div>
           ))}
           {!expanded && keyPoints.length > 3 && (
             <button
               onClick={() => setExpanded(true)}
-              className="text-xs text-cyan-400 hover:text-cyan-300 ml-3"
+              className="text-xs text-cyan-500 hover:text-cyan-400 ml-3 font-mono"
             >
               +{keyPoints.length - 3} more points
             </button>
@@ -151,7 +151,7 @@ const AgentPageCard = memo(function AgentPageCard({
       </div>
 
       {/* Footer badge */}
-      <div className="px-4 py-2 bg-neutral-800/50 border-t border-neutral-800">
+      <div className="px-4 py-2 bg-terminal-black border-t-2 border-white/20">
         <span className="text-xs text-neutral-500">
           Visited by Evelyn • {keyPoints.length} key points
         </span>

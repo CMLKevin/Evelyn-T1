@@ -152,7 +152,7 @@ function ToastItem({ toast, onClose, onHover }: ToastProps) {
 
   return (
     <div
-      className={`flex flex-col gap-2 px-4 py-3 rounded-lg border ${colorMap[toast.type]} backdrop-blur-sm shadow-lg animate-slide-in-right transition-all ${
+      className={`flex flex-col gap-2 px-4 py-3  border ${colorMap[toast.type]} backdrop-blur-sm shadow-lg animate-slide-in-right transition-all ${
         isHovered ? 'scale-105' : 'scale-100'
       }`}
       onMouseEnter={handleMouseEnter}
@@ -236,7 +236,7 @@ export function ToastContainer({ maxVisible = 3 }: ToastContainerProps) {
       <div className="fixed top-4 right-4 z-50 flex flex-col gap-2 max-w-md pointer-events-none">
         {/* Queue indicator */}
         {queuedCount > 0 && (
-          <div className="pointer-events-auto bg-gray-800/90 border border-white/10 rounded-lg px-3 py-2 backdrop-blur-sm shadow-lg">
+          <div className="pointer-events-auto bg-gray-800/90 border border-white/10  px-3 py-2 backdrop-blur-sm shadow-lg">
             <p className="text-xs text-gray-300">
               +{queuedCount} more notification{queuedCount > 1 ? 's' : ''} queued
             </p>
@@ -287,7 +287,7 @@ export function ToastContainer({ maxVisible = 3 }: ToastContainerProps) {
 
       {/* History Panel */}
       {showHistory && (
-        <div className="fixed top-4 right-4 z-[60] w-96 max-h-[600px] bg-[#1a1a1a] border border-white/10 rounded-lg shadow-2xl flex flex-col pointer-events-auto">
+        <div className="fixed top-4 right-4 z-[60] w-96 max-h-[600px] bg-[#1a1a1a] border border-white/10  shadow-2xl flex flex-col pointer-events-auto">
           {/* Header */}
           <div className="px-4 py-3 border-b border-white/10 flex items-center justify-between">
             <div className="flex items-center gap-2">

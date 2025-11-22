@@ -98,39 +98,39 @@ export default function AgentSessionInline({
 
   const colorClasses = {
     red: {
-      bg: 'from-red-500/10 to-red-600/10',
-      border: 'border-red-500/30',
-      text: 'text-red-400',
-      icon: 'text-red-400',
+      bg: 'bg-red-500/10',
+      border: 'border-red-500',
+      text: 'text-red-500',
+      icon: 'text-red-500',
       pulse: 'bg-red-500'
     },
     green: {
-      bg: 'from-green-500/10 to-emerald-600/10',
-      border: 'border-green-500/30',
-      text: 'text-green-400',
-      icon: 'text-green-400',
+      bg: 'bg-green-500/10',
+      border: 'border-green-500',
+      text: 'text-green-500',
+      icon: 'text-green-500',
       pulse: 'bg-green-500'
     },
     cyan: {
-      bg: 'from-cyan-500/10 to-blue-600/10',
-      border: 'border-cyan-500/30',
-      text: 'text-cyan-400',
-      icon: 'text-cyan-400',
+      bg: 'bg-cyan-500/10',
+      border: 'border-cyan-500',
+      text: 'text-cyan-500',
+      icon: 'text-cyan-500',
       pulse: 'bg-cyan-500'
     },
     amber: {
-      bg: 'from-amber-500/10 to-orange-600/10',
-      border: 'border-amber-500/30',
-      text: 'text-amber-400',
-      icon: 'text-amber-400',
+      bg: 'bg-amber-500/10',
+      border: 'border-amber-500',
+      text: 'text-amber-500',
+      icon: 'text-amber-500',
       pulse: 'bg-amber-500'
     },
     gray: {
-      bg: 'from-gray-500/10 to-gray-600/10',
-      border: 'border-gray-700',
-      text: 'text-gray-400',
-      icon: 'text-gray-400',
-      pulse: 'bg-gray-500'
+      bg: 'bg-terminal-900',
+      border: 'border-white/20',
+      text: 'text-terminal-400',
+      icon: 'text-terminal-400',
+      pulse: 'bg-terminal-500'
     }
   };
 
@@ -140,24 +140,24 @@ export default function AgentSessionInline({
     <div ref={containerRef} className="my-4 animate-fade-in">
       {/* Query badge */}
       <div className="flex items-center gap-2 mb-2 flex-wrap">
-        <div className="glass-dark px-3 py-1 rounded-full flex items-center gap-2 text-xs">
-          <Globe className="w-3 h-3 text-cyan-400" />
-          <span className="text-gray-400">Browsing:</span>
+        <div className="bg-terminal-900 border border-white/20 px-3 py-1 flex items-center gap-2 text-xs font-mono">
+          <Globe className="w-3 h-3 text-cyan-500" />
+          <span className="text-terminal-400 uppercase">Browsing:</span>
           <span className="text-white font-medium">{query}</span>
         </div>
         {!approved && (
-          <div className="px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-medium">
+          <div className="px-2 py-0.5 bg-amber-500/10 border border-amber-500 text-amber-500 text-[10px] font-mono font-medium uppercase">
             Awaiting approval
           </div>
         )}
       </div>
 
       {/* Main container */}
-      <div className={`bg-gradient-to-br ${colors.bg} rounded-3xl border ${colors.border} p-5 shadow-float hover:shadow-xl transition-all overflow-hidden`}>
+      <div className={`bg-terminal-900 border-2 ${colors.border} p-5 transition-colors overflow-hidden`}>
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-start gap-3 flex-1">
-            <div className={`w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-500 flex items-center justify-center shadow-lg ${isActive && !hasError && !isComplete ? 'animate-pulse' : ''}`}>
+            <div className={`w-10 h-10 bg-orange/20 border-2 border-orange flex items-center justify-center ${isActive && !hasError && !isComplete ? 'animate-pulse' : ''}`}>
               {isActive && !hasError && !isComplete ? (
                 <Loader2 className="w-5 h-5 text-white animate-spin" />
               ) : hasError ? (
@@ -175,7 +175,7 @@ export default function AgentSessionInline({
                   {hasError ? 'Browsing Error' : isComplete ? 'Browsing Complete' : isActive ? 'Evelyn is exploring...' : 'Browsing Session'}
                 </span>
                 {stepConfig && !isComplete && !hasError && (
-                  <div className={`flex items-center gap-1 px-2 py-0.5 rounded-full bg-${stepConfig.color}-500/20 border border-${stepConfig.color}-500/30`}>
+                  <div className={`flex items-center gap-1 px-2 py-0.5 bg-orange/10 border border-orange`}>
                     <StepIcon className={`w-3 h-3 ${colors.icon}`} />
                     <span className={`text-[10px] font-medium ${colors.text}`}>
                       {stepConfig.label}
@@ -187,7 +187,7 @@ export default function AgentSessionInline({
               {/* Current detail */}
               {currentDetail && !hasError && (
                 <div className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                  {isActive && <div className={`w-1 h-1 rounded-full ${colors.pulse} animate-pulse`} />}
+                  {isActive && <div className={`w-1 h-1 ${colors.pulse} animate-pulse`} />}
                   {currentDetail}
                 </div>
               )}
@@ -211,7 +211,7 @@ export default function AgentSessionInline({
 
           <button
             onClick={() => setExpanded(!expanded)}
-            className="glass-dark w-8 h-8 rounded-lg flex items-center justify-center hover:scale-110 transition-transform flex-shrink-0"
+            className="bg-terminal-900 border border-white/20 hover:border-white/30 w-8 h-8 flex items-center justify-center transition-colors flex-shrink-0"
           >
             <span className="text-sm text-white">{expanded ? '−' : '+'}</span>
           </button>
@@ -222,10 +222,10 @@ export default function AgentSessionInline({
           <div className="space-y-4 animate-fade-in">
             {/* Evelyn's intent */}
             {evelynIntent && (
-              <div className="bg-neutral-800/40 border border-neutral-700 rounded-2xl p-4">
+              <div className="bg-terminal-black border-2 border-orange p-4">
                 <div className="flex items-center gap-2 mb-2">
-                  <Brain className="w-4 h-4 text-purple-400" />
-                  <span className="text-xs font-semibold text-purple-300">Evelyn's Intent:</span>
+                  <Brain className="w-4 h-4 text-orange" />
+                  <span className="text-xs font-mono font-semibold text-orange uppercase">Evelyn's Intent:</span>
                 </div>
                 <p className="text-sm text-gray-200 leading-relaxed">
                   {evelynIntent}
@@ -235,10 +235,10 @@ export default function AgentSessionInline({
 
             {/* Entry URL */}
             {entryUrl && (
-              <div className="bg-neutral-800/40 border border-neutral-700 rounded-2xl p-3">
+              <div className="bg-terminal-black border-2 border-cyan-500 p-3">
                 <div className="flex items-center gap-2 mb-1.5">
                   <ExternalLink className="w-3.5 h-3.5 text-cyan-400" />
-                  <span className="text-xs font-semibold text-cyan-300">Starting point:</span>
+                  <span className="text-xs font-mono font-semibold text-cyan-500 uppercase">Starting point:</span>
                 </div>
                 <a
                   href={entryUrl}
@@ -253,7 +253,7 @@ export default function AgentSessionInline({
 
             {/* Error message */}
             {hasError && error && (
-              <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 flex items-start gap-3">
+              <div className="bg-red-500/10 border-2 border-red-500 p-4 flex items-start gap-3">
                 <AlertTriangle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
                 <div className="flex-1">
                   <div className="text-sm font-semibold text-red-300 mb-1">
@@ -285,10 +285,10 @@ export default function AgentSessionInline({
 
             {/* Summary */}
             {summary && (
-              <div className="bg-gradient-to-br from-purple-500/10 to-pink-500/10 border border-purple-500/30 rounded-2xl p-4">
+              <div className="bg-orange/10 border-2 border-orange p-4">
                 <div className="flex items-center gap-2 mb-3">
-                  <Sparkles className="w-4 h-4 text-purple-400" />
-                  <span className="text-xs font-semibold text-purple-300">
+                  <Sparkles className="w-4 h-4 text-orange" />
+                  <span className="text-xs font-mono font-semibold text-orange uppercase">
                     Evelyn's Summary:
                   </span>
                 </div>

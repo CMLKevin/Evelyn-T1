@@ -8,8 +8,237 @@ import {
   analyzeContent, 
   generateSuggestions, 
   applyShortcut,
-  makeTargetedEdit
+  makeTargetedEdit,
+  planCollaborateTask,
+  applyAutonomousEdit,
+  determineCollaborateIntent
 } from '../agent/collaborativeAssistant.js';
+
+const activeCollaborateTasks = new Set<number>();
+
+async function runCollaborateAgentTask(
+  io: Server,
+  socket: Socket,
+  data: {
+    documentId: number;
+    instruction: string;
+    content?: string;
+    contentType?: 'text' | 'code' | 'mixed';
+    language?: string | null;
+    originMessageIndex?: number | null;
+  }
+): Promise<void> {
+  const taskId = uuidv4();
+
+  if (activeCollaborateTasks.has(data.documentId)) {
+    const timestamp = new Date().toISOString();
+    socket.emit('collaborate:task_status', {
+      documentId: data.documentId,
+      taskId,
+      kind: 'custom',
+      status: 'error',
+      steps: [],
+      currentStepId: null,
+      error: 'Evelyn is already working on this document. Please wait for the current task to finish.',
+      timestamp,
+      originMessageIndex: data.originMessageIndex ?? null
+    });
+    socket.emit('collaborate:error', {
+      documentId: data.documentId,
+      message: 'Evelyn is already working on this document.'
+    });
+    return;
+  }
+
+  activeCollaborateTasks.add(data.documentId);
+
+  const baseSteps = [
+    { id: 'plan', label: 'Plan task', status: 'running' as const },
+    { id: 'edit', label: 'Apply edits', status: 'pending' as const },
+    { id: 'save', label: 'Save version', status: 'pending' as const }
+  ];
+
+  socket.emit('collaborate:task_status', {
+    documentId: data.documentId,
+    taskId,
+    kind: 'custom',
+    status: 'planning',
+    steps: baseSteps,
+    currentStepId: 'plan',
+    timestamp: new Date().toISOString(),
+    originMessageIndex: data.originMessageIndex ?? null
+  });
+
+  try {
+    const document = await db.collaborateDocument.findUnique({
+      where: { id: data.documentId },
+      include: {
+        versions: {
+          orderBy: { version: 'desc' },
+          take: 1
+        }
+      }
+    });
+
+    if (!document) {
+      throw new Error('Document not found');
+    }
+
+    const latestVersion = document.versions[0];
+
+    const content = data.content ?? latestVersion?.content ?? '';
+    const contentType = data.contentType ?? (document.contentType as 'text' | 'code' | 'mixed');
+    const language = data.language ?? document.language ?? null;
+
+    const plan = await planCollaborateTask(data.instruction, {
+      content,
+      contentType,
+      language
+    });
+
+    const plannedSteps = [
+      { id: 'plan', label: 'Plan task', status: 'done' as const, detail: (plan.steps || []).join(' → ') },
+      { id: 'edit', label: 'Apply edits', status: 'running' as const },
+      { id: 'save', label: 'Save version', status: 'pending' as const }
+    ];
+
+    socket.emit('collaborate:task_status', {
+      documentId: data.documentId,
+      taskId,
+      kind: plan.kind,
+      status: 'editing',
+      steps: plannedSteps,
+      currentStepId: 'edit',
+      timestamp: new Date().toISOString(),
+      originMessageIndex: data.originMessageIndex ?? null
+    });
+
+    const selection = plan.targetRange
+      ? { startLine: plan.targetRange.startLine, endLine: plan.targetRange.endLine }
+      : undefined;
+
+    const { newContent, summary } = await applyAutonomousEdit(
+      data.documentId,
+      content,
+      data.instruction,
+      selection
+    );
+
+    // Record Evelyn's edit in edit history
+    await db.collaborateEdit.create({
+      data: {
+        documentId: data.documentId,
+        author: 'evelyn',
+        editType: selection ? 'replace' : 'shortcut',
+        beforeText: content,
+        afterText: newContent,
+        position: JSON.stringify(
+          selection
+            ? { type: 'range', ...selection }
+            : { type: 'full_document' }
+        ),
+        description: summary,
+        shortcutType: plan.kind
+      }
+    });
+
+    // Create a new version for the updated document
+    const versionCount = await db.collaborateVersion.count({
+      where: { documentId: data.documentId }
+    });
+
+    const version = await db.collaborateVersion.create({
+      data: {
+        documentId: data.documentId,
+        version: versionCount + 1,
+        content: newContent,
+        description: `Autonomous edit: ${summary}`,
+        createdBy: 'evelyn',
+        evelynNote: summary
+      }
+    });
+
+    // Update document timestamps
+    await db.collaborateDocument.update({
+      where: { id: data.documentId },
+      data: { updatedAt: new Date(), lastAccessedAt: new Date() }
+    });
+
+    const summaryMessageContent = `Auto edit (${plan.kind}): ${summary}`;
+    const summaryAuxiliary = {
+      channel: 'collaborate',
+      documentId: data.documentId,
+      documentTitle: document.title,
+      isCollaborateChat: true,
+      autoEditSummary: true,
+      taskId,
+      versionId: version.id,
+      targetRange: selection ?? plan.targetRange ?? null
+    };
+
+    const summaryMessage = await db.message.create({
+      data: {
+        role: 'assistant',
+        content: summaryMessageContent,
+        auxiliary: JSON.stringify(summaryAuxiliary)
+      }
+    });
+
+    io.emit('collaborate:message:saved', {
+      id: summaryMessage.id,
+      role: summaryMessage.role,
+      content: summaryMessage.content,
+      createdAt: summaryMessage.createdAt.toISOString(),
+      auxiliary: summaryMessage.auxiliary
+    });
+
+    // Broadcast content change to all clients
+    io.emit('collaborate:content_changed', {
+      documentId: data.documentId,
+      content: newContent,
+      author: 'evelyn',
+      timestamp: new Date().toISOString()
+    });
+
+    const finalSteps = [
+      plannedSteps[0],
+      { ...plannedSteps[1], status: 'done' as const, detail: summary },
+      { id: 'save', label: 'Save version', status: 'done' as const }
+    ];
+
+    socket.emit('collaborate:task_status', {
+      documentId: data.documentId,
+      taskId,
+      kind: plan.kind,
+      status: 'complete',
+      steps: finalSteps,
+      currentStepId: 'save',
+      version,
+      timestamp: new Date().toISOString(),
+      originMessageIndex: data.originMessageIndex ?? null
+    });
+  } catch (error) {
+    console.error('Collaborate agent task error:', error);
+    socket.emit('collaborate:task_status', {
+      documentId: data.documentId,
+      taskId,
+      kind: 'custom',
+      status: 'error',
+      steps: [],
+      currentStepId: null,
+      error: error instanceof Error ? error.message : 'Failed to run collaborate agent task',
+      timestamp: new Date().toISOString(),
+      originMessageIndex: data.originMessageIndex ?? null
+    });
+
+    socket.emit('collaborate:error', {
+      documentId: data.documentId,
+      message: error instanceof Error ? error.message : 'Failed to run collaborate agent task'
+    });
+  } finally {
+    activeCollaborateTasks.delete(data.documentId);
+  }
+}
 
 export function setupWebSocket(io: Server) {
   // Attach logger to WebSocket server
@@ -180,6 +409,106 @@ export function setupWebSocket(io: Server) {
     // ========================================
     // COLLABORATE FEATURE EVENTS
     // ========================================
+
+    socket.on('collaborate:chat', async (data: { 
+      documentId: number;
+      message: string;
+      document?: {
+        title: string;
+        content: string;
+        contentType: 'text' | 'code' | 'mixed';
+        language: string | null;
+      };
+      intent?: string;
+      messageIndex?: number;
+    }) => {
+      try {
+        console.log(`[WebSocket] collaborate:chat received for document ${data.documentId}`);
+
+        const document = await db.collaborateDocument.findUnique({
+          where: { id: data.documentId },
+          include: {
+            versions: {
+              orderBy: { version: 'desc' },
+              take: 1
+            }
+          }
+        });
+
+        if (!document) {
+          socket.emit('collaborate:error', {
+            documentId: data.documentId,
+            message: 'Document not found'
+          });
+          return;
+        }
+
+        const latestVersion = document.versions[0];
+
+        const resolvedContent = data.document?.content ?? latestVersion?.content ?? '';
+        const resolvedTitle = data.document?.title ?? document.title;
+        const resolvedContentType = data.document?.contentType ?? (document.contentType as 'text' | 'code' | 'mixed');
+        const resolvedLanguage = data.document?.language ?? document.language ?? null;
+
+        const intentResult = await determineCollaborateIntent(data.message, {
+          title: resolvedTitle,
+          content: resolvedContent,
+          contentType: resolvedContentType,
+          language: resolvedLanguage
+        }).catch((intentError) => {
+          console.error('[Collaborate] Intent detection failed:', intentError);
+          return null;
+        });
+
+        await orchestrator.handleMessage(socket, {
+          content: data.message,
+          privacy: 'public',
+          source: 'collaborate',
+          collaborateDocumentContext: {
+            documentId: document.id,
+            title: resolvedTitle,
+            contentType: resolvedContentType,
+            language: resolvedLanguage,
+            content: resolvedContent
+          },
+          intentContext: intentResult || undefined
+        });
+
+        if (intentResult) {
+          const detectionPayload = {
+            documentId: document.id,
+            intent: intentResult.intent,
+            action: intentResult.action,
+            confidence: intentResult.confidence,
+            instruction: intentResult.derivedInstruction || data.message,
+            autoRunTriggered: intentResult.shouldRunEdit,
+            detectedAt: new Date().toISOString(),
+            originMessageIndex: data.messageIndex ?? null
+          };
+
+          socket.emit('collaborate:intent_detected', detectionPayload);
+
+          if (intentResult.shouldRunEdit) {
+            runCollaborateAgentTask(io, socket, {
+              documentId: document.id,
+              instruction: intentResult.derivedInstruction || data.message,
+              content: resolvedContent,
+              contentType: resolvedContentType,
+              language: resolvedLanguage,
+              originMessageIndex: data.messageIndex ?? null
+            }).catch((autoError) => {
+              console.error('Auto collaborate edit failed:', autoError);
+            });
+          }
+        }
+      } catch (error) {
+        console.error('Collaborate chat error:', error);
+        socket.emit('collaborate:error', {
+          documentId: data.documentId,
+          message: error instanceof Error ? error.message : 'Failed to process collaborate chat'
+        });
+      }
+    });
 
     socket.on('collaborate:create', async (data: { 
       title: string; 
@@ -408,6 +737,17 @@ export function setupWebSocket(io: Server) {
           message: error instanceof Error ? error.message : 'Failed to save version' 
         });
       }
+    });
+
+    socket.on('collaborate:run_agent_task', async (data: {
+      documentId: number;
+      instruction: string;
+      content?: string;
+      contentType?: 'text' | 'code' | 'mixed';
+      language?: string | null;
+    }) => {
+      console.log(`[WebSocket] collaborate:run_agent_task for document ${data.documentId}`);
+      await runCollaborateAgentTask(io, socket, data);
     });
 
     socket.on('collaborate:typing', async (data: { 

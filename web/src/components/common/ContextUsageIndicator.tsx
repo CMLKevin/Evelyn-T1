@@ -7,7 +7,7 @@ export default function ContextUsageIndicator() {
   const maxTokens = contextUsage?.maxTokens ?? 150000;
   const percentage = contextUsage?.percentage ?? 0;
   const messageCount = contextUsage?.messageCount ?? 0;
-  const rollingWindowSize = contextUsage?.rollingWindowSize ?? 150;
+  const rollingWindowSize = contextUsage?.rollingWindowSize ?? 1000;
   const windowStatus = contextUsage?.windowStatus ?? 'partial';
   const messageIdsInContext = contextUsage?.messageIdsInContext ?? [];
 

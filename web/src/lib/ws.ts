@@ -46,6 +46,9 @@ class WSClient {
   private lastSentMessage: string = '';
   private lastSentTime: number = 0;
 
+  // Collaborate chat streaming buffer (separate from main chat)
+  private collaborateStreamingMessage: string = '';
+
   connect() {
     // Prevent duplicate connections - check if already connected or connecting
     if (this.socket?.connected) {
@@ -98,6 +101,12 @@ class WSClient {
 
     // Batch token updates for performance
     this.socket.on('chat:token', (token: string) => {
+      // If a collaborate chat is active, stream tokens into a separate buffer
+      if (this.collaborateStreamingMessage !== '') {
+        this.collaborateStreamingMessage += token;
+        return;
+      }
+
       this.tokenBuffer.push(token);
       
       // Clear existing timeout
@@ -230,6 +239,65 @@ class WSClient {
     // COLLABORATE FEATURE EVENTS
     // ========================================
 
+    // Streaming events for collaborate chat (mapped from orchestrator when source === 'collaborate')
+    this.socket.on('collaborate:token', (token: string) => {
+      // Accumulate collaborate response tokens; UI will render only the final message for now
+      this.collaborateStreamingMessage += token;
+    });
+
+    this.socket.on('collaborate:split', () => {
+      // Preserve split markers as paragraph breaks in the final message
+      this.collaborateStreamingMessage += '\n\n';
+    });
+
+    this.socket.on('collaborate:complete', () => {
+      if (this.collaborateStreamingMessage.trim()) {
+        useStore.getState().addCollaborateChatMessage('evelyn', this.collaborateStreamingMessage.trim());
+      }
+      this.collaborateStreamingMessage = '';
+    });
+
+    this.socket.on('collaborate:user_message_logged', (message: any) => {
+      const store = useStore.getState();
+      store.addMessage({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        createdAt: message.createdAt,
+        auxiliary: message.auxiliary
+      });
+    });
+
+    this.socket.on('collaborate:message:saved', (message: any) => {
+      const store = useStore.getState();
+      store.addMessage({
+        id: message.id,
+        role: message.role,
+        content: message.content,
+        createdAt: message.createdAt,
+        auxiliary: message.auxiliary
+      });
+
+      let auxiliary: any = null;
+      if (message.auxiliary) {
+        try {
+          auxiliary = typeof message.auxiliary === 'string' ? JSON.parse(message.auxiliary) : message.auxiliary;
+        } catch (parseError) {
+          console.error('[WS] Failed to parse collaborate message auxiliary:', parseError);
+        }
+      }
+
+      if (auxiliary?.autoEditSummary) {
+        const { collaborateState } = store;
+        if (collaborateState.activeDocument?.id === auxiliary.documentId) {
+          store.addCollaborateChatMessage('evelyn', message.content, {
+            id: message.id,
+            timestamp: message.createdAt
+          });
+        }
+      }
+    });
+
     this.socket.on('collaborate:document_created', (data: any) => {
       console.log('[WS] Collaborate document created:', data);
       const { collaborateState } = useStore.getState();
@@ -245,6 +313,51 @@ class WSClient {
       if (collaborateState.activeDocument?.id === data.documentId && data.author !== 'user') {
         // Update content from Evelyn's edit
         useStore.getState().updateDocumentContent(data.content);
+      }
+    });
+
+    this.socket.on('collaborate:task_status', (data: any) => {
+      console.log('[WS] Collaborate task status:', data);
+      const store = useStore.getState();
+      const { collaborateState } = store;
+
+      // Only track tasks for the currently active document
+      if (!collaborateState.activeDocument || collaborateState.activeDocument.id !== data.documentId) {
+        return;
+      }
+
+      const prev = collaborateState.agentTask;
+      const isSameTask = prev && prev.taskId === data.taskId;
+      const startedAt = isSameTask ? prev.startedAt : (data.timestamp || new Date().toISOString());
+      const completedStatuses = ['complete', 'error'];
+      const completedAt = completedStatuses.includes(data.status)
+        ? (data.timestamp || new Date().toISOString())
+        : prev?.completedAt;
+
+      const originMessageIndex =
+        typeof data.originMessageIndex === 'number'
+          ? data.originMessageIndex
+          : prev?.originMessageIndex ?? null;
+
+      store.setCollaborateAgentTask({
+        taskId: data.taskId,
+        kind: data.kind || prev?.kind || 'custom',
+        status: data.status,
+        startedAt,
+        completedAt,
+        steps: data.steps || prev?.steps || [],
+        currentStepId: data.currentStepId ?? prev?.currentStepId ?? null,
+        error: data.error || null,
+        originMessageIndex
+      });
+
+      if (data.version) {
+        const deduped = collaborateState.versionHistory.filter(v => v.id !== data.version.id);
+        store.setVersionHistory([data.version, ...deduped]);
+      }
+
+      if (completedStatuses.includes(data.status) && collaborateState.activeDocument?.id === data.documentId) {
+        store.setCollaborateIntentDetection(null);
       }
     });
 
@@ -313,9 +426,34 @@ class WSClient {
 
     this.socket.on('collaborate:error', (data: any) => {
       console.error('[WS] Collaborate error:', data);
-      useStore.getState().setError(data.message);
-      useStore.getState().setCollaborateGeneratingStatus(false);
-      useStore.getState().setEditMode('user');
+      const message = data?.message || 'Collaborate action failed';
+      const store = useStore.getState();
+      store.setError(message);
+      store.setCollaborateGeneratingStatus(false);
+      store.setEditMode('user');
+      this.collaborateStreamingMessage = '';
+      const activeDocId = store.collaborateState.activeDocument?.id;
+      if (!data?.documentId || data.documentId === activeDocId) {
+        store.setCollaborateIntentDetection(null);
+      }
+    });
+
+    this.socket.on('collaborate:intent_detected', (data: any) => {
+      const store = useStore.getState();
+      const { collaborateState } = store;
+      if (collaborateState.activeDocument?.id !== data.documentId) {
+        return;
+      }
+
+      store.setCollaborateIntentDetection({
+        intent: data.intent,
+        action: data.action,
+        confidence: data.confidence,
+        instruction: data.instruction,
+        autoRunTriggered: !!data.autoRunTriggered,
+        detectedAt: data.detectedAt || new Date().toISOString(),
+        originMessageIndex: typeof data.originMessageIndex === 'number' ? data.originMessageIndex : null
+      });
     });
 
     // Event logging for debugging (optional - can be enabled/disabled)
@@ -479,6 +617,36 @@ class WSClient {
   // COLLABORATE FEATURE METHODS
   // ========================================
 
+  sendCollaborateChat(
+    documentId: number,
+    userMessage: string,
+    title: string,
+    documentContent: string,
+    contentType: 'text' | 'code' | 'mixed',
+    language: string | null,
+    intent?: string,
+    messageIndex?: number
+  ) {
+    if (!this.socket?.connected) {
+      throw new Error('Not connected to server');
+    }
+    // Reset any previous streaming buffer for collaborate chat
+    this.collaborateStreamingMessage = '';
+
+    this.socket.emit('collaborate:chat', {
+      documentId,
+      message: intent ? `${intent}\n\n${userMessage}` : userMessage,
+      document: {
+        title,
+        content: documentContent,
+        contentType,
+        language
+      },
+      intent,
+      messageIndex
+    });
+  }
+
   createCollaborateDocument(title: string, contentType: 'text' | 'code' | 'mixed', language?: string, initialContent?: string) {
     if (!this.socket?.connected) {
       throw new Error('Not connected to server');
@@ -539,6 +707,28 @@ class WSClient {
     }
     this.socket.emit('collaborate:analyze', { documentId, content, contentType });
   }
+
+  runCollaborateAgentTask(
+    documentId: number,
+    instruction: string,
+    content: string,
+    contentType: 'text' | 'code' | 'mixed',
+    language: string | null,
+    originMessageIndex?: number | null
+  ) {
+    if (!this.socket?.connected) {
+      throw new Error('Not connected to server');
+    }
+    this.socket.emit('collaborate:run_agent_task', {
+      documentId,
+      instruction,
+      content,
+      contentType,
+      language,
+      originMessageIndex
+    });
+  }
 }
+
 
 export const wsClient = new WSClient();

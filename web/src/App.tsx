@@ -84,10 +84,11 @@ export default function App() {
 
   // Loading fallback component
   const LoadingFallback = () => (
-    <div className="flex items-center justify-center h-full">
-      <div className="text-cyan-400 monospace text-sm animate-pulse">
-        Loading...
+    <div className="flex flex-col items-center justify-center h-full gap-3">
+      <div className="relative">
+        <div className="w-12 h-12 border-4 border-purple-500/20 border-t-purple-500 rounded-full animate-spin" />
       </div>
+      <div className="text-white text-sm font-medium">Loading...</div>
     </div>
   );
 
@@ -95,7 +96,7 @@ export default function App() {
     switch (uiState.activeTab) {
       case 'chat':
         return (
-          <div className="flex h-full gap-4 p-4">
+          <div className="flex h-full gap-5 p-5">
             <ThinkingPanel />
             
             <div className="flex-1">

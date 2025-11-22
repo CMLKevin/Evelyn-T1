@@ -160,12 +160,6 @@ export interface ContextSnapshot {
       current: boolean;
       tokens: number;
     };
-    codebase: {
-      active: boolean;
-      files: number;
-      project: string;
-      tokens: number;
-    };
     conversation: {
       messageCount: number;
       messageIds: number[];
@@ -338,11 +332,48 @@ interface CollaborateEdit {
   createdAt: string;
 }
 
+interface CollaborateIntentDetection {
+  intent: 'edit_document' | 'ask_question' | 'analyze_document' | 'chat' | 'other';
+  action: 'respond_only' | 'edit_document' | 'suggestions' | 'plan';
+  confidence: number;
+  instruction?: string;
+  autoRunTriggered: boolean;
+  detectedAt: string;
+  originMessageIndex?: number | null;
+}
+
+interface CollaborateChatMessage {
+  id?: number;
+  role: 'user' | 'evelyn';
+  content: string;
+  timestamp: string;
+  messageIndex?: number;
+}
+
 interface TextRange {
   startLine: number;
   startChar: number;
   endLine: number;
   endChar: number;
+}
+
+interface CollaborateAgentTaskStep {
+  id: string;
+  label: string;
+  status: 'pending' | 'running' | 'done' | 'error';
+  detail?: string;
+}
+
+interface CollaborateAgentTaskSession {
+  taskId: string;
+  kind: 'analyze' | 'rewrite' | 'refactor' | 'review' | 'polish' | 'custom';
+  status: 'planning' | 'editing' | 'applying_edits' | 'complete' | 'error';
+  startedAt: string;
+  completedAt?: string;
+  steps: CollaborateAgentTaskStep[];
+  currentStepId?: string | null;
+  error?: string;
+  originMessageIndex?: number;
 }
 
 interface CollaborateState {
@@ -357,9 +388,11 @@ interface CollaborateState {
   showInlineSuggestions: boolean;
   editMode: 'user' | 'evelyn' | 'collaborative';
   versionHistory: CollaborateVersion[];
-  chatMessages: Array<{ role: 'user' | 'evelyn'; content: string; timestamp: string }>;
+  chatMessages: CollaborateChatMessage[];
   isSaving: boolean;
   lastSaved: string | null;
+  agentTask: CollaborateAgentTaskSession | null;
+  lastIntentDetection: CollaborateIntentDetection | null;
 }
 
 interface LogEntry {
@@ -515,8 +548,15 @@ interface Store {
   setSavingStatus: (isSaving: boolean) => void;
   
   // Chat
-  addCollaborateChatMessage: (role: 'user' | 'evelyn', content: string) => void;
+  addCollaborateChatMessage: (
+    role: 'user' | 'evelyn',
+    content: string,
+    metadata?: { id?: number; timestamp?: string; messageIndex?: number }
+  ) => void;
+  setCollaborateChatMessages: (messages: CollaborateChatMessage[]) => void;
   clearCollaborateChat: () => void;
+  setCollaborateAgentTask: (task: CollaborateAgentTaskSession | null) => void;
+  setCollaborateIntentDetection: (intent: CollaborateIntentDetection | null) => void;
   
   // Load data
   loadCollaborateDocuments: () => Promise<void>;
@@ -608,6 +648,8 @@ export const useStore = create<Store>((set, get) => ({
     chatMessages: [],
     isSaving: false,
     lastSaved: null,
+    agentTask: null,
+    lastIntentDetection: null,
   },
 
   setConnected: (connected) => set({ connected }),
@@ -1371,21 +1413,50 @@ export const useStore = create<Store>((set, get) => ({
   })),
   
   // Chat
-  addCollaborateChatMessage: (role, content) => set((state) => ({
+  addCollaborateChatMessage: (role, content, metadata) => set((state) => {
+    const nextIndex = metadata?.messageIndex ?? state.collaborateState.chatMessages.length;
+    const nextMessage: CollaborateChatMessage = {
+      id: metadata?.id,
+      role,
+      content,
+      timestamp: metadata?.timestamp ?? new Date().toISOString(),
+      messageIndex: nextIndex
+    };
+
+    return {
+      collaborateState: {
+        ...state.collaborateState,
+        chatMessages: [...state.collaborateState.chatMessages, nextMessage]
+      }
+    };
+  }),
+
+  setCollaborateChatMessages: (messages) => set((state) => ({
     collaborateState: {
       ...state.collaborateState,
-      chatMessages: [
-        ...state.collaborateState.chatMessages,
-        { role, content, timestamp: new Date().toISOString() }
-      ]
+      chatMessages: messages
     }
   })),
   
   clearCollaborateChat: () => set((state) => ({
-    collaborateState: { ...state.collaborateState, chatMessages: [] }
+    collaborateState: { ...state.collaborateState, chatMessages: [], lastIntentDetection: null }
+  })),
+
+  setCollaborateAgentTask: (task: CollaborateAgentTaskSession | null) => set((state) => ({
+    collaborateState: { ...state.collaborateState, agentTask: task }
+  })),
+
+  setCollaborateIntentDetection: (intent) => set((state) => ({
+    collaborateState: {
+      ...state.collaborateState,
+      lastIntentDetection: intent
+    }
   })),
   
   // Load data
+
+
+
   loadCollaborateDocuments: async () => {
     try {
       console.log('[Store] Loading collaborate documents...');
@@ -1414,6 +1485,25 @@ export const useStore = create<Store>((set, get) => ({
         const latestVersion = document.versions && document.versions.length > 0 
           ? document.versions[0]
           : null;
+
+        let chatMessages: CollaborateChatMessage[] = [];
+        try {
+          const chatResponse = await fetch(`http://localhost:3001/api/collaborate/${documentId}/chat`);
+          if (chatResponse.ok) {
+            const serverMessages = await chatResponse.json();
+            chatMessages = Array.isArray(serverMessages)
+              ? serverMessages.map((msg: any, idx: number) => ({
+                  id: msg.id,
+                  role: msg.role,
+                  content: msg.content,
+                  timestamp: msg.timestamp || new Date().toISOString(),
+                  messageIndex: typeof msg.messageIndex === 'number' ? msg.messageIndex : idx
+                }))
+              : [];
+          }
+        } catch (chatError) {
+          console.error('[Store] Failed to hydrate collaborate chat history:', chatError);
+        }
         
         set((state) => ({
           collaborateState: {
@@ -1421,7 +1511,11 @@ export const useStore = create<Store>((set, get) => ({
             activeDocument: document,
             currentContent: latestVersion?.content || '',
             versionHistory: document.versions || [],
-            currentSuggestions: document.suggestions?.filter((s: CollaborateSuggestion) => s.status === 'pending') || []
+            currentSuggestions: document.suggestions?.filter((s: CollaborateSuggestion) => s.status === 'pending') || [],
+            // New document load clears any previous agent task state
+            agentTask: null,
+            chatMessages,
+            lastIntentDetection: null
           }
         }));
       }

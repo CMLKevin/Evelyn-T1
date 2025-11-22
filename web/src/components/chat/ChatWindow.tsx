@@ -44,26 +44,26 @@ export default function ChatWindow() {
   const isThinking = latestThinking?.status === 'running';
 
   return (
-    <div className="w-full h-full flex flex-col terminal-panel rounded overflow-hidden relative z-10">
-      {/* Terminal Header */}
-      <div className="terminal-header p-3 flex items-center justify-between">
+    <div className="w-full h-full flex flex-col bg-terminal-900 border-2 border-white/20 overflow-hidden">
+      {/* Terminal Title Bar */}
+      <div className="px-5 py-3 flex items-center justify-between border-b-2 border-white/20 bg-terminal-dark">
         <div className="flex items-center gap-3">
-          <span className="text-cyan-400 terminal-glow font-bold">$ evelyn://chat</span>
+          {/* Chat Title */}
           <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
-            <span className="text-xs text-gray-400">
-              {connected ? 'CONNECTED' : 'DISCONNECTED'}
-            </span>
+            <div className="p-1.5 bg-orange/20 border-2 border-orange">
+              <Sparkles className="w-4 h-4 text-orange" />
+            </div>
+            <span className="text-sm font-mono font-bold uppercase tracking-wide text-white">Chat Window</span>
           </div>
           
-          {/* Compact Thinking Indicator */}
+          {/* Thinking Indicator */}
           {isThinking && (
-            <div className="flex items-center gap-2 bg-purple-500/20 border border-purple-500/30 rounded px-2 py-1">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-orange/10 border border-orange animate-fade-in">
               <div className="relative">
-                <div className="absolute inset-0 bg-purple-400 rounded-full animate-ping opacity-75" />
-                <Brain className="w-3 h-3 text-purple-400 relative" />
+                <div className="absolute inset-0 bg-orange animate-ping opacity-75" />
+                <Brain className="w-3.5 h-3.5 text-orange relative" />
               </div>
-              <span className="text-xs text-purple-300 font-mono">{elapsed.toFixed(1)}s</span>
+              <span className="text-xs text-orange font-mono">{elapsed.toFixed(1)}s</span>
             </div>
           )}
         </div>

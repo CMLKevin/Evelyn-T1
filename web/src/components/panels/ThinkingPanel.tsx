@@ -108,9 +108,9 @@ export default function ThinkingPanel() {
             <div className="flex items-center gap-3">
               <div className="relative">
                 {isRunning && (
-                  <div className="absolute inset-0 bg-white rounded-full animate-ping opacity-75" />
+                  <div className="absolute inset-0 bg-white  animate-ping opacity-75" />
                 )}
-                <div className="relative w-10 h-10 rounded bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30">
+                <div className="relative w-10 h-10 bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/30">
                   <ContextIcon className="w-5 h-5 text-white" />
                 </div>
               </div>
@@ -122,7 +122,7 @@ export default function ThinkingPanel() {
               </div>
             </div>
             {isRunning && (
-              <div className="text-xs text-white/90 font-mono bg-white/10 px-2 py-1 rounded border border-white/20">
+              <div className="text-xs text-white/90 font-mono bg-white/10 px-2 py-1 border border-white/20">
                 {elapsed.toFixed(1)}s
               </div>
             )}
@@ -140,7 +140,7 @@ export default function ThinkingPanel() {
                   {Math.round(metadata.contextConfidence * 100)}%
                 </span>
               </div>
-              <div className="h-1.5 bg-white/5 rounded overflow-hidden">
+              <div className="h-1.5 bg-white/5 overflow-hidden">
                 <div
                   className={`h-full bg-gradient-to-r ${contextColor} transition-all duration-500 ease-out`}
                   style={{ width: `${metadata.contextConfidence * 100}%` }}
@@ -158,7 +158,7 @@ export default function ThinkingPanel() {
                   Inner Thought
                 </span>
               </div>
-              <div className="bg-black/40 rounded border border-purple-500/20 p-3">
+              <div className="bg-black/40 border border-purple-500/20 p-3">
                 <p className="text-sm text-gray-200 italic leading-relaxed monospace">
                   "{metadata.thought}"
                 </p>
@@ -175,7 +175,7 @@ export default function ThinkingPanel() {
                   Approach
                 </span>
               </div>
-              <div className="bg-black/40 rounded border border-cyan-500/20 p-3">
+              <div className="bg-black/40 border border-cyan-500/20 p-3">
                 <p className="text-sm text-gray-200 leading-relaxed monospace">
                   {metadata.responseApproach}
                 </p>
@@ -187,7 +187,7 @@ export default function ThinkingPanel() {
           {(metadata?.emotionalTone || metadata?.complexity || metadata?.responseLength) && (
             <div className="grid grid-cols-2 gap-3">
               {metadata?.emotionalTone && (
-                <div className="bg-black/40 rounded border border-pink-500/20 p-3">
+                <div className="bg-black/40 border border-pink-500/20 p-3">
                   <div className="flex items-center gap-2 mb-1">
                     <Heart className="w-3.5 h-3.5 text-pink-400" />
                     <span className="text-[10px] font-semibold text-pink-400 uppercase tracking-wide monospace">
@@ -201,7 +201,7 @@ export default function ThinkingPanel() {
               )}
 
               {metadata?.responseLength && (
-                <div className="bg-black/40 rounded border border-amber-500/20 p-3">
+                <div className="bg-black/40 border border-amber-500/20 p-3">
                   <div className="flex items-center gap-2 mb-1">
                     <TrendingUp className="w-3.5 h-3.5 text-amber-400" />
                     <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wide monospace">
@@ -215,7 +215,7 @@ export default function ThinkingPanel() {
               )}
 
               {metadata?.complexity && (
-                <div className="bg-black/40 rounded border border-purple-500/20 p-3">
+                <div className="bg-black/40 border border-purple-500/20 p-3">
                   <div className="flex items-center gap-2 mb-1">
                     <Zap className="w-3.5 h-3.5 text-purple-400" />
                     <span className="text-[10px] font-semibold text-purple-400 uppercase tracking-wide monospace">
@@ -239,7 +239,7 @@ export default function ThinkingPanel() {
                   Memory
                 </span>
               </div>
-              <div className="bg-black/40 rounded border border-amber-500/20 p-3 space-y-2">
+              <div className="bg-black/40 border border-amber-500/20 p-3 space-y-2">
                 <div className="flex items-center justify-between monospace">
                   <span className="text-xs text-gray-400">Store</span>
                   <span className={`text-xs font-semibold ${metadata.memoryGuidance.shouldStore ? 'text-green-400' : 'text-gray-500'}`}>
@@ -258,7 +258,7 @@ export default function ThinkingPanel() {
           {/* Status Indicator */}
           {isDone && (
             <div className="flex items-center gap-2 justify-center pt-2">
-              <div className="w-2 h-2 bg-green-400 rounded-full" />
+              <div className="w-2 h-2 bg-green-400 " />
               <span className="text-xs text-green-400 font-medium monospace">
                 COMPLETE
               </span>

@@ -141,9 +141,9 @@ export default function MessageInput() {
   const charPercentage = (input.length / charLimit) * 100;
 
   return (
-    <div className="terminal-footer p-4">
-      <div className={`relative bg-black/60 rounded border transition-all ${
-        isFocused ? 'border-cyan-500 shadow-[0_0_10px_rgba(0,255,255,0.5)]' : 'border-cyan-500/30'
+    <div className="px-5 py-4 border-t-2 border-white/20">
+      <div className={`relative group border-2 transition-colors duration-150 ${
+        isFocused ? 'border-orange' : 'border-white/20 hover:border-white/30'
       }`}>
         {/* Textarea */}
         <div className="relative">
@@ -154,18 +154,21 @@ export default function MessageInput() {
             onKeyDown={handleKeyDown}
             onFocus={() => setIsFocused(true)}
             onBlur={() => setIsFocused(false)}
-            placeholder={connected ? `$ message evelyn...` : '$ connecting...'}
+            placeholder={connected ? `Message Evelyn...` : 'Connecting...'}
             disabled={!connected}
             maxLength={charLimit}
-            className="w-full bg-transparent text-white px-4 pt-4 pb-3 resize-none outline-none placeholder-gray-600 monospace text-sm leading-relaxed min-h-[80px] max-h-[200px]"
+            className="w-full px-4 py-3 bg-terminal-black border-none text-white placeholder-terminal-500 text-sm font-mono resize-none focus:outline-none transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed min-h-[80px] max-h-[200px]"
             rows={1}
           />
           
-          {/* Character counter - only show when approaching limit */}
+          
+          {/* Character counter */}
           {charPercentage > 70 && (
             <div className="absolute top-3 right-3">
-              <span className={`text-xs font-mono ${
-                charPercentage > 95 ? 'text-red-400' : charPercentage > 85 ? 'text-yellow-400' : 'text-cyan-400'
+              <span className={`text-xs font-mono px-2 py-0.5 border ${
+                charPercentage > 95 ? 'bg-red-500/10 text-red-500 border-red-500' : 
+                charPercentage > 85 ? 'bg-yellow-500/10 text-yellow-500 border-yellow-500' : 
+                'bg-orange/10 text-orange border-orange'
               }`}>
                 {charLimit - input.length}
               </span>
@@ -174,37 +177,34 @@ export default function MessageInput() {
         </div>
 
         {/* Footer */}
-        <div className="px-4 pb-3 flex items-center justify-between border-t border-cyan-500/20 pt-3">
-          <div className="flex items-center gap-3 text-xs text-gray-500 monospace">
+        <div className="px-4 py-3 flex items-center justify-between border-t-2 border-white/20 bg-terminal-dark">
+          <div className="flex items-center gap-3 text-xs text-zinc-500">
             {!connected ? (
-              <span className="text-red-400 flex items-center gap-2">
-                <div className="w-1.5 h-1.5 bg-red-400 rounded-full animate-pulse" />
-                RECONNECTING...
+              <span className="text-red-300 flex items-center gap-2">
+                <div className="w-1.5 h-1.5 bg-red-400 animate-pulse" />
+                Reconnecting...
               </span>
             ) : agentSession.sessionId && !agentSession.approved ? (
-              <span className="text-yellow-400 flex items-center gap-2">
-                <div className="w-1.5 h-1.5 bg-yellow-400 rounded-full animate-pulse" />
-                WAITING FOR APPROVAL...
+              <span className="text-yellow-300 flex items-center gap-2">
+                <div className="w-1.5 h-1.5 bg-yellow-400 animate-pulse" />
+                Waiting for approval...
               </span>
             ) : agentSession.isActive ? (
-              <span className="text-cyan-400 flex items-center gap-2">
-                <div className="w-1.5 h-1.5 bg-cyan-400 rounded-full animate-pulse" />
-                BROWSING...
+              <span className="text-cyan-300 flex items-center gap-2">
+                <div className="w-1.5 h-1.5 bg-cyan-400 animate-pulse" />
+                Browsing...
               </span>
             ) : (
               <>
-                <span>
-                  <kbd className="terminal-kbd">Enter</kbd> send
+                <span className="text-zinc-600">
+                  <kbd className="px-1.5 py-0.5 bg-terminal-900 border border-white/20 text-terminal-400 font-mono text-[10px]">Enter</kbd> send
                 </span>
-                <span>
-                  <kbd className="terminal-kbd">Shift+Enter</kbd> newline
-                </span>
-                <span>
-                  <kbd className="terminal-kbd">↑↓</kbd> history
+                <span className="text-zinc-600">
+                  <kbd className="px-1.5 py-0.5 bg-terminal-900 border border-white/20 text-terminal-400 font-mono text-[10px]">Shift+Enter</kbd> newline
                 </span>
                 <button
                   onClick={() => setShowHelp(!showHelp)}
-                  className="text-cyan-400 hover:text-cyan-300 transition-colors flex items-center gap-1"
+                  className="text-zinc-500 hover:text-white transition-colors flex items-center gap-1"
                 >
                   <HelpCircle className="w-3 h-3" />
                   <span>help</span>
@@ -218,7 +218,7 @@ export default function MessageInput() {
             <button
               onClick={handleBrowse}
               disabled={!input.trim() || !connected || agentSession.isActive || !!currentMessage}
-              className="terminal-button disabled:opacity-30 disabled:cursor-not-allowed"
+              className="px-3 py-1.5 bg-terminal-900 hover:bg-terminal-800 border-2 border-white/20 hover:border-white/30 text-terminal-300 hover:text-white text-sm font-mono transition-colors duration-150 disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
               title={currentMessage ? "Wait for Evelyn to finish responding" : "Start agentic web browsing"}
             >
               <Globe className="w-4 h-4" />
@@ -229,7 +229,7 @@ export default function MessageInput() {
             <button
               onClick={handleSend}
               disabled={!input.trim() || !connected}
-              className="terminal-button disabled:opacity-30 disabled:cursor-not-allowed"
+              className="px-4 py-1.5 bg-orange hover:bg-orange-dark border-2 border-orange text-white text-sm font-mono uppercase tracking-wide transition-colors duration-150 disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
             >
               <Send className="w-4 h-4" />
               <span>Send</span>
@@ -240,52 +240,52 @@ export default function MessageInput() {
 
       {/* Help Panel */}
       {showHelp && (
-        <div className="mt-4 terminal-panel p-4 animate-slide-in-up">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-bold text-cyan-400 flex items-center gap-2">
-              <Terminal className="w-4 h-4" />
+        <div className="mt-4 px-4 py-3 bg-terminal-900 border-2 border-white/20 animate-fade-in">
+          <div className="flex items-center justify-between mb-3 border-b border-white/10 pb-2">
+            <h3 className="text-sm font-mono font-bold uppercase tracking-wide text-white flex items-center gap-2">
+              <Terminal className="w-4 h-4 text-orange" />
               Keyboard Shortcuts
             </h3>
             <button
               onClick={() => setShowHelp(false)}
-              className="text-gray-400 hover:text-white text-xs"
+              className="text-terminal-500 hover:text-white text-xs font-mono transition-colors"
             >
               close
             </button>
           </div>
           
-          <div className="grid grid-cols-2 gap-3 text-xs monospace">
+          <div className="grid grid-cols-2 gap-3 text-xs">
             <div>
-              <kbd className="terminal-kbd">Enter</kbd>
-              <span className="text-gray-400 ml-2">Send message</span>
+              <kbd className="px-1.5 py-0.5 bg-terminal-900 border border-white/20 text-terminal-400 font-mono text-[10px]">Enter</kbd>
+              <span className="text-zinc-500 ml-2">Send message</span>
             </div>
             <div>
-              <kbd className="terminal-kbd">Shift+Enter</kbd>
-              <span className="text-gray-400 ml-2">New line</span>
+              <kbd className="px-1.5 py-0.5 bg-terminal-900 border border-white/20 text-terminal-400 font-mono text-[10px]">Shift+Enter</kbd>
+              <span className="text-zinc-500 ml-2">New line</span>
             </div>
             <div>
-              <kbd className="terminal-kbd">↑</kbd>
-              <span className="text-gray-400 ml-2">Previous message</span>
+              <kbd className="px-1.5 py-0.5 bg-terminal-900 border border-white/20 text-terminal-400 font-mono text-[10px]">↑</kbd>
+              <span className="text-zinc-500 ml-2">Previous message</span>
             </div>
             <div>
-              <kbd className="terminal-kbd">↓</kbd>
-              <span className="text-gray-400 ml-2">Next message</span>
+              <kbd className="px-1.5 py-0.5 bg-terminal-900 border border-white/20 text-terminal-400 font-mono text-[10px]">↓</kbd>
+              <span className="text-zinc-500 ml-2">Next message</span>
             </div>
             <div>
-              <kbd className="terminal-kbd">Ctrl+L</kbd>
-              <span className="text-gray-400 ml-2">Clear input</span>
+              <kbd className="px-1.5 py-0.5 bg-terminal-900 border border-white/20 text-terminal-400 font-mono text-[10px]">Ctrl+L</kbd>
+              <span className="text-zinc-500 ml-2">Clear input</span>
             </div>
             <div>
-              <kbd className="terminal-kbd">Ctrl+K</kbd>
-              <span className="text-gray-400 ml-2">Command palette</span>
+              <kbd className="px-1.5 py-0.5 bg-terminal-900 border border-white/20 text-terminal-400 font-mono text-[10px]">Ctrl+K</kbd>
+              <span className="text-zinc-500 ml-2">Command palette</span>
             </div>
             <div>
-              <kbd className="terminal-kbd">Ctrl+F</kbd>
-              <span className="text-gray-400 ml-2">Search messages</span>
+              <kbd className="px-1.5 py-0.5 bg-terminal-900 border border-white/20 text-terminal-400 font-mono text-[10px]">Ctrl+F</kbd>
+              <span className="text-zinc-500 ml-2">Search messages</span>
             </div>
             <div>
-              <kbd className="terminal-kbd">Ctrl+/</kbd>
-              <span className="text-gray-400 ml-2">Toggle help</span>
+              <kbd className="px-1.5 py-0.5 bg-terminal-900 border border-white/20 text-terminal-400 font-mono text-[10px]">Ctrl+/</kbd>
+              <span className="text-zinc-500 ml-2">Toggle help</span>
             </div>
           </div>
         </div>

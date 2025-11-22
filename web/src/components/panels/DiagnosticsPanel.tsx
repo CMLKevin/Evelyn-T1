@@ -139,13 +139,13 @@ export default function DiagnosticsPanel() {
             <span className="text-cyan-400 terminal-glow font-bold monospace">$ evelyn://diagnostics</span>
             {innerThoughts.some(t => t.status === 'running') && (
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 bg-cyan-400 rounded-full animate-pulse" />
+                <div className="w-2 h-2 bg-cyan-400  animate-pulse" />
                 <span className="text-xs text-cyan-400 monospace">PROCESSING</span>
               </div>
             )}
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
+            <div className="w-2 h-2 bg-green-400  animate-pulse" />
             <span className="text-xs text-green-400 monospace">ONLINE</span>
           </div>
         </div>
@@ -210,7 +210,7 @@ export default function DiagnosticsPanel() {
                             <span className="text-xs font-semibold text-cyan-400 monospace">THINK</span>
                             <span className={`text-[10px] ${getStatusColor(thought.status)} monospace flex items-center gap-1`}>
                                 {thought.status === 'running' && (
-                                  <div className="w-1 h-1 bg-yellow-400 rounded-full animate-pulse" />
+                                  <div className="w-1 h-1 bg-yellow-400  animate-pulse" />
                                 )}
                               {thought.status.toUpperCase()}
                               </span>
@@ -411,7 +411,7 @@ export default function DiagnosticsPanel() {
                       </span>
                       {event.type === 'start' && (
                           <span className="text-xs text-yellow-400 flex items-center gap-1 monospace">
-                          <div className="w-1.5 h-1.5 bg-yellow-400 rounded-full animate-pulse" />
+                          <div className="w-1.5 h-1.5 bg-yellow-400  animate-pulse" />
                             PROCESSING
                         </span>
                       )}
@@ -554,7 +554,7 @@ export default function DiagnosticsPanel() {
                       </span>
                         <span className={`text-xs ${getStatusColor(activity.status)} flex items-center gap-1 monospace`}>
                         {activity.status === 'running' && (
-                          <div className="w-1.5 h-1.5 bg-yellow-400 rounded-full animate-pulse" />
+                          <div className="w-1.5 h-1.5 bg-yellow-400  animate-pulse" />
                         )}
                           {activity.status.toUpperCase()}
                       </span>

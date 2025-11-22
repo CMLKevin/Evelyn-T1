@@ -56,20 +56,20 @@ export default function AgentBrowsingResults({
     <div ref={containerRef} className="my-4 animate-fade-in">
       {/* Badge */}
       <div className="flex items-center gap-2 mb-2 flex-wrap">
-        <div className="glass-dark px-3 py-1 rounded-full flex items-center gap-2 text-xs">
-          <Sparkles className="w-3 h-3 text-purple-400" />
-          <span className="text-gray-400">Browsing Results:</span>
+        <div className="bg-terminal-900 border border-white/20 px-3 py-1 flex items-center gap-2 text-xs font-mono">
+          <Sparkles className="w-3 h-3 text-orange" />
+          <span className="text-terminal-400 uppercase">Browsing Results:</span>
           <span className="text-white font-medium">{query}</span>
         </div>
         <span className="text-xs text-gray-500">{formatTime(timestamp)}</span>
       </div>
 
       {/* Main card */}
-      <div className="bg-gradient-to-br from-purple-500/10 to-pink-500/10 rounded-3xl border border-purple-500/30 p-5 shadow-float hover:shadow-xl transition-all overflow-hidden">
+      <div className="bg-terminal-900 border-2 border-orange p-5 transition-colors overflow-hidden">
         {/* Header */}
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-start gap-3 flex-1">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg">
+            <div className="w-10 h-10 bg-orange/20 border-2 border-orange flex items-center justify-center">
               <Sparkles className="w-5 h-5 text-white" />
             </div>
 
@@ -85,7 +85,7 @@ export default function AgentBrowsingResults({
 
           <button
             onClick={() => setExpanded(!expanded)}
-            className="glass-dark w-8 h-8 rounded-lg flex items-center justify-center hover:scale-110 transition-transform flex-shrink-0"
+            className="bg-terminal-900 border border-white/20 hover:border-white/30 w-8 h-8 flex items-center justify-center transition-colors flex-shrink-0"
           >
             {expanded ? (
               <ChevronUp className="w-4 h-4 text-white" />
@@ -96,10 +96,10 @@ export default function AgentBrowsingResults({
         </div>
 
         {/* Summary - always visible, truncated */}
-        <div className="bg-neutral-800/40 border border-neutral-700 rounded-2xl p-4 mb-4">
+        <div className="bg-terminal-black border-2 border-orange p-4 mb-4">
           <div className="flex items-center gap-2 mb-2">
-            <Brain className="w-4 h-4 text-purple-400" />
-            <span className="text-xs font-semibold text-purple-300 uppercase tracking-wide">
+            <Brain className="w-4 h-4 text-orange" />
+            <span className="text-xs font-mono font-semibold text-orange uppercase tracking-wide">
               What Evelyn Discovered
             </span>
           </div>
@@ -109,7 +109,7 @@ export default function AgentBrowsingResults({
                 {summary.slice(0, 300)}...
                 <button
                   onClick={() => setExpanded(true)}
-                  className="text-purple-400 hover:text-purple-300 ml-1"
+                  className="text-orange hover:text-orange-dark ml-1 font-mono"
                 >
                   read more
                 </button>
@@ -132,7 +132,7 @@ export default function AgentBrowsingResults({
             {pages.length > 3 && !expanded && (
               <button
                 onClick={() => setShowAllPages(!showAllPages)}
-                className="text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                className="text-xs text-orange hover:text-orange-dark transition-colors font-mono"
               >
                 {showAllPages ? 'Show less' : `+${pages.length - 3} more`}
               </button>
@@ -143,18 +143,18 @@ export default function AgentBrowsingResults({
             {visiblePages.map((page, idx) => (
               <div
                 key={idx}
-                className="bg-neutral-800/40 border border-neutral-700 rounded-xl p-3 hover:border-neutral-600 transition-colors"
+                className="bg-terminal-black border-2 border-white/20 hover:border-white/30 p-3 transition-colors"
               >
                 <div className="flex items-start gap-2 mb-2">
-                  <div className="w-5 h-5 rounded bg-purple-500/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <span className="text-xs text-purple-400 font-medium">{idx + 1}</span>
+                  <div className="w-5 h-5 bg-orange/20 border border-orange flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <span className="text-xs text-orange font-mono font-medium">{idx + 1}</span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <a
                       href={page.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-sm text-white hover:text-purple-300 transition-colors font-medium flex items-center gap-1 group"
+                      className="text-sm text-white hover:text-orange transition-colors font-medium flex items-center gap-1 group"
                     >
                       <span className="truncate">{page.title}</span>
                       <ExternalLink className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
@@ -177,7 +177,7 @@ export default function AgentBrowsingResults({
                   <div className="mt-2 pl-7 space-y-1">
                     {page.keyPoints.slice(0, 2).map((point, i) => (
                       <div key={i} className="flex items-start gap-1.5 text-xs text-gray-400">
-                        <span className="text-purple-400 mt-0.5">•</span>
+                        <span className="text-orange mt-0.5">•</span>
                         <span className="flex-1">{point}</span>
                       </div>
                     ))}
@@ -191,7 +191,7 @@ export default function AgentBrowsingResults({
         {/* Expand hint */}
         {!expanded && (
           <div className="text-xs text-center text-gray-500 mt-4">
-            Click <ChevronDown className="w-3 h-3 inline text-purple-400" /> to see full insights and all pages
+            Click <ChevronDown className="w-3 h-3 inline text-orange" /> to see full insights and all pages
           </div>
         )}
       </div>

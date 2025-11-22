@@ -19,9 +19,9 @@ export const Skeleton: React.FC<SkeletonProps> = ({
   const shimmerClasses = animate ? 'skeleton-shimmer' : '';
   
   const variantClasses = {
-    text: 'rounded',
-    circular: 'rounded-full',
-    rectangular: 'rounded-lg'
+    text: '',
+    circular: '',
+    rectangular: ''
   };
 
   const style: React.CSSProperties = {
@@ -39,7 +39,7 @@ export const Skeleton: React.FC<SkeletonProps> = ({
 
 // Task Card Skeleton for CollaborationTimeline
 export const TaskCardSkeleton: React.FC = () => (
-  <div className="border rounded-lg bg-white/5 border-white/10 overflow-hidden">
+  <div className="border  bg-white/5 border-white/10 overflow-hidden">
     <div className="p-4">
       <div className="flex items-start gap-3">
         <Skeleton variant="circular" width={20} height={20} />
@@ -69,7 +69,7 @@ export const TaskCardSkeleton: React.FC = () => (
 
 // Subtask Skeleton for CollaborationTimeline
 export const SubtaskSkeleton: React.FC = () => (
-  <div className="p-3 border rounded-lg bg-white/5 border-white/10">
+  <div className="p-3 border  bg-white/5 border-white/10">
     <div className="flex items-start gap-2">
       <Skeleton variant="circular" width={20} height={20} />
       <div className="flex-1 space-y-2">
@@ -88,7 +88,7 @@ export const SubtaskSkeleton: React.FC = () => (
 
 // Suggestion Card Skeleton for SuggestionsPanel
 export const SuggestionCardSkeleton: React.FC = () => (
-  <div className="p-4 border rounded-lg bg-white/5 border-white/10">
+  <div className="p-4 border  bg-white/5 border-white/10">
     <div className="flex items-start justify-between mb-3">
       <div className="flex-1 space-y-2">
         <Skeleton width={250} height={16} />

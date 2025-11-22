@@ -58,7 +58,7 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, className = '
           const language = match ? match[1] : '';
           
           return !inline && language ? (
-            <div className="my-3 rounded-xl overflow-hidden shadow-lg">
+            <div className="my-3  overflow-hidden shadow-lg">
               <div className="bg-gray-800 px-4 py-2 text-xs text-gray-400 font-mono border-b border-gray-700">
                 {language}
               </div>
@@ -213,7 +213,7 @@ const MarkdownRenderer = memo(function MarkdownRenderer({ content, className = '
           <img
             src={src}
             alt={alt}
-            className="rounded-lg max-w-full h-auto my-3 shadow-lg"
+            className=" max-w-full h-auto my-3 shadow-lg"
             loading="lazy"
           />
         ),

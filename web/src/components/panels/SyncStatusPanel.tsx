@@ -30,10 +30,10 @@ export default function SyncStatusPanel() {
   };
 
   return (
-    <div className="glass-strong rounded-3xl p-5 shadow-float animate-fade-in">
+    <div className="bg-terminal-900 border-2 border-white/20 p-5 animate-fade-in">
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold text-gradient-purple">Server Status</h2>
-        <div className={`w-2 h-2 rounded-full animate-pulse ${connected ? 'bg-green-400' : 'bg-red-400'}`} />
+        <h2 className="text-xl font-bold font-mono uppercase text-orange">Server Status</h2>
+        <div className={`w-2 h-2 animate-pulse ${connected ? 'bg-green-500' : 'bg-red-500'}`} />
       </div>
 
       {/* Connection Status */}
@@ -75,7 +75,7 @@ export default function SyncStatusPanel() {
         <button
           onClick={handleRefresh}
           disabled={isRefreshing}
-          className="w-full glass hover:glass-strong px-4 py-2 rounded-xl flex items-center justify-center gap-2 transition-all hover:scale-105 disabled:opacity-50"
+          className="w-full bg-orange hover:bg-orange-dark border-2 border-orange px-4 py-2 flex items-center justify-center gap-2 transition-colors disabled:opacity-50 font-mono uppercase"
         >
           <span className="text-sm">
             {isRefreshing ? '🔄 Refreshing...' : '🔄 Refresh from Server'}
@@ -84,7 +84,7 @@ export default function SyncStatusPanel() {
       </div>
 
       {/* Info */}
-      <div className="mt-4 p-3 glass-dark rounded-2xl">
+      <div className="mt-4 p-3 bg-terminal-black border-2 border-white/20">
         <div className="text-xs text-gray-400 space-y-1">
           <div>✅ Real-time sync via WebSocket</div>
           <div>✅ Immediate database persistence</div>

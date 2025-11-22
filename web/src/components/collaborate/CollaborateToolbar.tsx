@@ -11,6 +11,7 @@ import {
   Clock,
   Check
 } from 'lucide-react';
+import { Badge } from '../ui';
 import ShortcutMenu from './ShortcutMenu';
 import NewDocumentModal from './NewDocumentModal';
 import ExportModal from './ExportModal';
@@ -70,8 +71,8 @@ export default function CollaborateToolbar() {
   const getSaveStatus = () => {
     if (isSaving) {
       return (
-        <span className="flex items-center gap-1 text-terminal-secondary text-sm">
-          <Clock className="w-3 h-3 animate-spin" />
+        <span className="flex items-center gap-1.5 text-orange text-sm font-mono">
+          <Clock className="w-3.5 h-3.5 animate-spin" />
           Saving...
         </span>
       );
@@ -79,8 +80,8 @@ export default function CollaborateToolbar() {
     if (lastSaved) {
       const time = new Date(lastSaved).toLocaleTimeString();
       return (
-        <span className="flex items-center gap-1 text-terminal-accent text-sm">
-          <Check className="w-3 h-3" />
+        <span className="flex items-center gap-1.5 text-green-500 text-sm font-mono">
+          <Check className="w-3.5 h-3.5" />
           Saved at {time}
         </span>
       );
@@ -90,15 +91,13 @@ export default function CollaborateToolbar() {
 
   return (
     <>
-      <div className="flex items-center justify-between px-4 py-2 border-b border-terminal-border bg-black/40">
+      <div className="flex items-center justify-between px-5 py-3 border-b-2 border-white/20 bg-terminal-dark">
         {/* Left section */}
         <div className="flex items-center gap-4">
           {/* New Document */}
           <button
             onClick={() => setShowNewDoc(true)}
-            className="px-3 py-1 bg-terminal-accent/20 hover:bg-terminal-accent/30 
-                     border border-terminal-accent rounded text-terminal-accent
-                     transition-all duration-200 flex items-center gap-2"
+            className="px-3 py-1.5 bg-orange hover:bg-orange-dark border-2 border-orange text-white text-sm font-mono uppercase tracking-wide transition-colors duration-150 flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
             New
@@ -108,9 +107,9 @@ export default function CollaborateToolbar() {
           {activeDocument && (
             <div className="flex items-center gap-2">
               {activeDocument.contentType === 'code' ? (
-                <Code className="w-4 h-4 text-terminal-secondary" />
+                <Code className="w-4 h-4 text-orange" />
               ) : (
-                <FileText className="w-4 h-4 text-terminal-secondary" />
+                <FileText className="w-4 h-4 text-cyan-500" />
               )}
               
               {isEditingTitle ? (
@@ -123,24 +122,22 @@ export default function CollaborateToolbar() {
                     if (e.key === 'Enter') handleTitleSave();
                     if (e.key === 'Escape') setIsEditingTitle(false);
                   }}
-                  className="bg-black border border-terminal-accent px-2 py-1 rounded
-                           text-terminal-text focus:outline-none focus:ring-1 focus:ring-terminal-accent"
+                  className="px-3 py-1 bg-terminal-black border-2 border-orange text-white font-mono focus:outline-none transition-colors"
                   autoFocus
                 />
               ) : (
                 <button
                   onClick={handleTitleEdit}
-                  className="text-terminal-text hover:text-terminal-accent transition-colors"
+                  className="text-white hover:text-orange transition-colors font-mono font-medium"
                 >
                   {activeDocument.title}
                 </button>
               )}
 
               {activeDocument.language && (
-                <span className="text-xs text-terminal-secondary px-2 py-0.5 
-                               bg-terminal-secondary/10 rounded border border-terminal-secondary/30">
+                <Badge variant="default" size="sm">
                   {activeDocument.language}
-                </span>
+                </Badge>
               )}
             </div>
           )}
@@ -158,9 +155,7 @@ export default function CollaborateToolbar() {
             <div className="relative">
               <button
                 onClick={() => setShowShortcuts(!showShortcuts)}
-                className="px-3 py-1 bg-terminal-secondary/20 hover:bg-terminal-secondary/30 
-                         border border-terminal-secondary rounded text-terminal-secondary
-                         transition-all duration-200 flex items-center gap-2"
+                className="px-3 py-1.5 bg-terminal-900 hover:bg-terminal-800 border-2 border-white/20 hover:border-white/30 text-terminal-300 hover:text-white text-sm font-mono transition-colors duration-150 flex items-center gap-2"
               >
                 Shortcuts
                 <ChevronDown className={`w-4 h-4 transition-transform ${showShortcuts ? 'rotate-180' : ''}`} />
@@ -175,10 +170,10 @@ export default function CollaborateToolbar() {
           {activeDocument && (
             <button
               onClick={() => setCollaborateActivePanel('versions')}
-              className="p-2 hover:bg-terminal-border rounded transition-colors"
+              className="p-2 hover:bg-terminal-800 border border-white/20 hover:border-white/30 transition-colors group"
               title="Version History"
             >
-              <History className="w-4 h-4 text-terminal-text" />
+              <History className="w-4 h-4 text-zinc-400 group-hover:text-white transition-colors" />
             </button>
           )}
 
@@ -187,10 +182,10 @@ export default function CollaborateToolbar() {
             <button
               onClick={handleSaveVersion}
               disabled={isSaving}
-              className="p-2 hover:bg-terminal-border rounded transition-colors disabled:opacity-50"
+              className="p-2 hover:bg-terminal-800 border border-white/20 hover:border-white/30 transition-colors disabled:opacity-50 group"
               title="Save Version (Ctrl+S)"
             >
-              <Save className="w-4 h-4 text-terminal-text" />
+              <Save className="w-4 h-4 text-zinc-400 group-hover:text-white transition-colors" />
             </button>
           )}
 
@@ -198,10 +193,10 @@ export default function CollaborateToolbar() {
           {activeDocument && (
             <button
               onClick={() => setShowExport(true)}
-              className="p-2 hover:bg-terminal-border rounded transition-colors"
+              className="p-2 hover:bg-terminal-800 border border-white/20 hover:border-white/30 transition-colors group"
               title="Export Document"
             >
-              <Download className="w-4 h-4 text-terminal-text" />
+              <Download className="w-4 h-4 text-zinc-400 group-hover:text-white transition-colors" />
             </button>
           )}
         </div>

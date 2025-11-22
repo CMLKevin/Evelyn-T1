@@ -35,15 +35,13 @@ export default function ContextFlowChart({ snapshot }: ContextFlowChartProps) {
         'personality': 1,
         'system-prompt': 0,
         'search': 1,
-        'codebase': 0,
-        'inner-thought': 0,
+        'inner-thought': 1,
       },
       coding: {
-        'codebase': 2,
         'conversation': 2,
-        'inner-thought': 1,
+        'inner-thought': 2,
         'memories': 1,
-        'personality': 0,
+        'personality': 1,
         'system-prompt': 0,
         'search': 0,
       },
@@ -53,8 +51,7 @@ export default function ContextFlowChart({ snapshot }: ContextFlowChartProps) {
         'conversation': 2,
         'personality': 1,
         'system-prompt': 0,
-        'codebase': 0,
-        'inner-thought': 0,
+        'inner-thought': 1,
       },
     };
 
@@ -110,7 +107,7 @@ export default function ContextFlowChart({ snapshot }: ContextFlowChartProps) {
         style: {
           background: `${color}${emphasis === 2 ? '25' : emphasis === 1 ? '20' : '15'}`,
           border: `${borderWidth} solid ${color}`,
-          borderRadius: '8px',
+          borderRadius: '0px',
           padding: '12px',
           minWidth,
           cursor: 'pointer',
@@ -166,21 +163,7 @@ export default function ContextFlowChart({ snapshot }: ContextFlowChartProps) {
           'Search Results',
           sources.searchResults.tokens,
           '#eab308', // yellow
-          `${sources.searchResults.recent} recent`
-        )
-      );
-      yOffset += spacing;
-    }
-
-    // Codebase
-    if (sources.codebase.active && sources.codebase.tokens > 0) {
-      sourceNodes.push(
-        createSourceNode(
-          'codebase',
-          'Codebase',
-          sources.codebase.tokens,
-          '#3b82f6', // blue
-          `${sources.codebase.files} files`
+          `${sources.searchResults.recent} recent${sources.searchResults.current ? ' (active)' : ''}`
         )
       );
       yOffset += spacing;
@@ -235,7 +218,7 @@ export default function ContextFlowChart({ snapshot }: ContextFlowChartProps) {
       style: {
         background: 'rgba(6, 182, 212, 0.1)',
         border: '3px solid #06b6d4',
-        borderRadius: '50%',
+        borderRadius: '0px',
         width: '120px',
         height: '120px',
         display: 'flex',
@@ -259,12 +242,12 @@ export default function ContextFlowChart({ snapshot }: ContextFlowChartProps) {
       },
       targetPosition: Position.Left,
       style: {
-        background: 'linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(168, 85, 247, 0.2))',
-        border: '3px solid #06b6d4',
-        borderRadius: '12px',
+        background: 'rgba(255, 115, 0, 0.1)',
+        border: '3px solid #ff7300',
+        borderRadius: '0px',
         padding: '16px',
         minWidth: '140px',
-        boxShadow: '0 0 20px rgba(6, 182, 212, 0.3)',
+        boxShadow: '0 0 20px rgba(255, 115, 0, 0.3)',
       },
     });
 
@@ -286,7 +269,6 @@ export default function ContextFlowChart({ snapshot }: ContextFlowChartProps) {
       'personality': '#a855f7',
       'memories': '#22c55e',
       'search': '#eab308',
-      'codebase': '#3b82f6',
       'conversation': '#ec4899',
       'inner-thought': '#f97316',
     };
@@ -297,7 +279,6 @@ export default function ContextFlowChart({ snapshot }: ContextFlowChartProps) {
       'personality',
       'memories',
       ...(sources.searchResults.tokens > 0 ? ['search'] : []),
-      ...(sources.codebase.active && sources.codebase.tokens > 0 ? ['codebase'] : []),
       'conversation',
       ...(sources.innerThought ? ['inner-thought'] : []),
     ];
@@ -307,7 +288,6 @@ export default function ContextFlowChart({ snapshot }: ContextFlowChartProps) {
       'personality': sources.personality.tokens,
       'memories': sources.memories.tokens,
       'search': sources.searchResults.tokens,
-      'codebase': sources.codebase.tokens,
       'conversation': sources.conversation.tokens,
       'inner-thought': sources.innerThought?.tokens || 0,
     };
@@ -372,7 +352,7 @@ export default function ContextFlowChart({ snapshot }: ContextFlowChartProps) {
 
   return (
     <>
-      <div className="w-full h-[600px] rounded-lg overflow-hidden border border-cyan-500/30 bg-gray-900">
+      <div className="w-full h-[600px] overflow-hidden border-2 border-white/20 bg-terminal-black">
         <ReactFlow
           nodes={nodes}
           edges={edges}
@@ -384,11 +364,11 @@ export default function ContextFlowChart({ snapshot }: ContextFlowChartProps) {
           defaultViewport={{ x: 0, y: 0, zoom: 1 }}
         >
           <Background color="#06b6d4" gap={16} size={1} style={{ opacity: 0.1 }} />
-          <Controls className="bg-gray-800 border-cyan-500/50" />
+          <Controls className="bg-terminal-900 border-2 border-white/20" />
           <MiniMap
-            className="bg-gray-800 border border-cyan-500/50"
+            className="bg-terminal-900 border-2 border-white/20"
             nodeColor={(node) => {
-              if (node.id === 'evelyn') return '#06b6d4';
+              if (node.id === 'evelyn') return '#ff7300';
               if (node.id === 'context-aggregator') return '#06b6d4';
               return '#4b5563';
             }}

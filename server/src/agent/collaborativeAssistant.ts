@@ -7,6 +7,21 @@ import { db } from '../db/client.js';
  */
 
 // ========================================
+// Types
+// ========================================
+
+export type CollaborateIntentAction = 'respond_only' | 'edit_document' | 'suggestions' | 'plan';
+
+export interface CollaborateIntentResult {
+  intent: 'edit_document' | 'ask_question' | 'analyze_document' | 'chat' | 'other';
+  action: CollaborateIntentAction;
+  confidence: number;
+  shouldRunEdit: boolean;
+  derivedInstruction?: string;
+  targetRange?: { startLine: number; endLine: number } | null;
+}
+
+// ========================================
 // Content Analysis
 // ========================================
 
@@ -368,6 +383,253 @@ export async function applyShortcut(
   }
 }
 
+// ========================================
+// Autonomous Collaborate Tasks
+// ========================================
+
+export async function planCollaborateTask(
+  instruction: string,
+  context: { content: string; contentType: 'text' | 'code' | 'mixed'; language?: string | null }
+): Promise<{ kind: string; steps: string[]; targetRange?: { startLine: number; endLine: number } | null }> {
+  console.log('[CollaborateAI] Planning collaborate task');
+
+  const prompt = `You are an AI collaborator helping edit a document. The user gave this instruction:
+"${instruction}"
+
+Document metadata:
+- Type: ${context.contentType}
+- Language: ${context.language || 'unknown'}
+
+Document content (may be truncated):
+${context.content}
+
+Decide what kind of task this is and outline concrete steps.
+
+Respond with JSON only in this shape:
+{
+  "kind": "analyze" | "rewrite" | "refactor" | "review" | "polish" | "custom",
+  "steps": ["step 1", "step 2", "step 3"],
+  "targetRange": { "startLine": number, "endLine": number } | null
+}`;
+
+  try {
+    const response = await openRouterClient.complete(
+      [{ role: 'user', content: prompt }],
+      'moonshotai/kimi-k2-0905',
+      { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
+    );
+
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      const kind = parsed.kind || 'custom';
+      const steps = Array.isArray(parsed.steps) && parsed.steps.length > 0
+        ? parsed.steps.map((s: any) => String(s))
+        : ['Analyze instruction', 'Apply changes to the document'];
+
+      let targetRange = null;
+      if (parsed.targetRange && typeof parsed.targetRange.startLine === 'number' && typeof parsed.targetRange.endLine === 'number') {
+        targetRange = {
+          startLine: parsed.targetRange.startLine,
+          endLine: parsed.targetRange.endLine
+        };
+      }
+
+      return { kind, steps, targetRange };
+    }
+  } catch (error) {
+    console.error('[CollaborateAI] Failed to plan collaborate task:', error);
+  }
+
+  // Fallback plan
+  return {
+    kind: 'custom',
+    steps: ['Analyze instruction', 'Apply changes to the document', 'Summarize what changed'],
+    targetRange: null
+  };
+}
+
+// ========================================
+// Intent Detection
+// ========================================
+
+export async function determineCollaborateIntent(
+  message: string,
+  context: {
+    title: string;
+    content: string;
+    contentType: 'text' | 'code' | 'mixed';
+    language?: string | null;
+  }
+): Promise<CollaborateIntentResult> {
+  const fallback: CollaborateIntentResult = {
+    intent: 'chat',
+    action: 'respond_only',
+    confidence: 0.2,
+    shouldRunEdit: false,
+    derivedInstruction: undefined,
+    targetRange: null
+  };
+
+  try {
+    const truncatedContent =
+      context.content.length > 3000 ? context.content.slice(0, 3000) + '\n...[truncated]' : context.content;
+
+    const prompt = `You are an intelligent assistant helping a user edit a document.
+Your goal is to determine if the user's message implies an action to EDIT the document, or if it is just a question/comment.
+
+Document Context:
+- Title: ${context.title}
+- Type: ${context.contentType}
+- Language: ${context.language || 'unknown'}
+
+Recent Document Content (first 3000 chars):
+"""
+${truncatedContent}
+"""
+
+User Message:
+"${message}"
+
+Instructions:
+1. Analyze the user's message in the context of the document.
+2. If the user clearly wants to modify the text (e.g., "delete this", "change X to Y", "refactor this function", "fix the typo", "add a comment here"), set intent="edit_document" and action="edit_document".
+3. If the user is asking a question or discussing (e.g., "what does this do?", "I think we should change this later"), set intent="chat" or "ask_question" and action="respond_only".
+4. If the user wants suggestions but not direct edits (e.g., "how can I improve this?"), set intent="analyze_document" or "ask_question" and action="respond_only" (or "suggestions").
+
+Examples:
+- "Fix the typo in line 5" -> edit_document
+- "Make the tone more professional" -> edit_document
+- "What is this function doing?" -> ask_question
+- "I don't like this paragraph" -> chat (unless they say "change it")
+- "Add a console log to debug" -> edit_document
+
+Output JSON:
+{
+  "intent": "edit_document" | "ask_question" | "analyze_document" | "chat" | "other",
+  "action": "edit_document" | "respond_only" | "suggestions" | "plan",
+  "confidence": <number 0.0-1.0>,
+  "reasoning": "<brief explanation>",
+  "derivedInstruction": "<precise instruction for the edit, if applicable>",
+  "targetRange": { "startLine": <number>, "endLine": <number> } | null
+}
+
+Set "action":"edit_document" ONLY when the user clearly wants you to change the document text NOW.`;
+
+    const response = await openRouterClient.complete(
+      [{ role: 'user', content: prompt }],
+      'moonshotai/kimi-k2-0905',
+      { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
+    );
+
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      const intent = parsed.intent || 'chat';
+      const action: CollaborateIntentAction = parsed.action || 'respond_only';
+      const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0.3;
+
+      console.log(`[CollaborateAI] Intent detected: ${intent} (${(confidence * 100).toFixed(0)}%) | Action: ${action} | Reason: ${parsed.reasoning}`);
+
+      let targetRange = null;
+      if (
+        parsed.targetRange &&
+        typeof parsed.targetRange.startLine === 'number' &&
+        typeof parsed.targetRange.endLine === 'number'
+      ) {
+        targetRange = {
+          startLine: parsed.targetRange.startLine,
+          endLine: parsed.targetRange.endLine
+        };
+      }
+
+      // Slightly higher threshold for auto-edits to prevent unwanted changes
+      const shouldRunEdit = action === 'edit_document' && confidence >= 0.6;
+
+      return {
+        intent,
+        action,
+        confidence,
+        shouldRunEdit,
+        derivedInstruction: parsed.derivedInstruction,
+        targetRange
+      };
+    }
+  } catch (error) {
+    console.error('[CollaborateAI] Failed to determine collaborate intent:', error);
+  }
+
+  return fallback;
+}
+
+export async function applyAutonomousEdit(
+  documentId: number,
+  content: string,
+  instruction: string,
+  selection?: { startLine: number; endLine: number }
+): Promise<{ newContent: string; summary: string }> {
+  console.log('[CollaborateAI] Applying autonomous edit for document', documentId);
+
+  // If we have an explicit selection, use targeted edit
+  if (selection && selection.startLine && selection.endLine) {
+    const editedSection = await makeTargetedEdit(content, selection, instruction);
+
+    const lines = content.split('\n');
+    const startIdx = Math.max(0, selection.startLine - 1);
+    const endIdx = Math.min(lines.length, selection.endLine);
+
+    const before = lines.slice(0, startIdx);
+    const after = lines.slice(endIdx);
+
+    const newContent = [...before, editedSection, ...after].join('\n');
+    const summary = `Edited lines ${selection.startLine}-${selection.endLine} based on instruction.`;
+
+    return { newContent, summary };
+  }
+
+  // Otherwise, try to map the instruction to a known shortcut
+  const lower = instruction.toLowerCase();
+  let shortcutType: string | null = null;
+  const options: any = {};
+
+  if (lower.includes('shorter') || lower.includes('condense') || lower.includes('summarize')) {
+    shortcutType = 'adjust_length';
+    options.direction = 'shorter';
+  } else if (lower.includes('longer') || lower.includes('expand') || lower.includes('elaborate')) {
+    shortcutType = 'adjust_length';
+    options.direction = 'longer';
+  } else if (lower.includes('simplify') || lower.includes('easier to read')) {
+    shortcutType = 'reading_level';
+    options.level = 'high';
+  } else if (lower.includes('polish') || lower.includes('clean up') || lower.includes('grammar')) {
+    shortcutType = 'add_polish';
+  } else if (lower.includes('emoji')) {
+    shortcutType = 'add_emojis';
+  }
+
+  if (shortcutType) {
+    const newContent = await applyShortcut(shortcutType, content, options);
+    const summary = `Applied ${shortcutType} shortcut based on instruction.`;
+    return { newContent, summary };
+  }
+
+  // Fallback: ask the model to directly apply the instruction to the whole document
+  const prompt = `Apply the following instruction to this document and return only the updated document text.
+Instruction: "${instruction}"
+
+Document:
+${content}`;
+
+  const newContent = await openRouterClient.complete(
+    [{ role: 'user', content: prompt }],
+    'moonshotai/kimi-k2-0905',
+    { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
+  );
+
+  const summary = 'Applied instruction to the full document.';
+  return { newContent, summary };
+}
+
 export default {
   analyzeContent,
   generateSuggestions,
@@ -381,5 +643,8 @@ export default {
   fixBugs,
   portLanguage,
   makeTargetedEdit,
-  applyShortcut
+  applyShortcut,
+  planCollaborateTask,
+  applyAutonomousEdit,
+  determineCollaborateIntent
 };

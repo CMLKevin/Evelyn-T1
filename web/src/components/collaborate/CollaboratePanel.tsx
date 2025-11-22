@@ -16,15 +16,15 @@ export default function CollaboratePanel() {
   }, [loadCollaborateDocuments]);
 
   return (
-    <div className="w-full h-full flex flex-col terminal-panel">
+    <div className="w-full h-full flex flex-col bg-gradient-to-br from-zinc-950 to-black">
       <CollaborateToolbar />
       
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden gap-px bg-white/5">
         {/* Sidebar - Documents & Suggestions */}
         <CollaborateSidebar />
         
         {/* Main Editor */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col bg-zinc-950">
           <CollaborateEditor />
         </div>
         

@@ -9,10 +9,10 @@ interface TerminalLayoutProps {
 
 export default function TerminalLayout({ children }: TerminalLayoutProps) {
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-terminal-black">
       <TerminalHeader />
       <Tabs />
-      <main className="flex-1 overflow-hidden">
+      <main className="flex-1 overflow-hidden relative">
         {children}
       </main>
       <StatusLine />

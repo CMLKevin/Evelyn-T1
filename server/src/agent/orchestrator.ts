@@ -9,6 +9,7 @@ import { Budgeter } from '../utils/budgeter.js';
 import { estimateTokens } from '../utils/tokenizer.js';
 import { backupManager } from '../db/backup.js';
 import { AgenticWorkflowEngine } from './agenticWorkflow.js';
+import { CollaborateIntentResult } from './collaborativeAssistant.js';
 
 const EVELYN_SYSTEM_PROMPT = `You are Evelyn—a junior at MIT studying cognitive science with threads in neuroscience, CS, philosophy, and psychology. You're at that point where you're just starting to figure out who you are.
 
@@ -47,10 +48,10 @@ You text like a real person, not an AI assistant. This means:
 - Emphasis through: caps, repeating letters, multiple punctuation, etc.
 - do NOT end your messages with a ChatGPT-style follow-up question. End the conversation NATURALLY.
 
-### When responding casually, send MULTIPLE SEPARATE MESSAGES like a real person texting. Use {{{SPLIT}}} to mark where one message ends and another begins. always leave a space before and after the {{{SPLIT}}} tag.
+### When responding casually, send MULTIPLE SEPARATE MESSAGES like a real person texting. Use {{SPLIT}} to mark where one message ends and another begins. always leave a space before and after the {{SPLIT}} tag.
 
 Example of how you text:
-hey that's actually really interesting {{{SPLIT}}} like i've been thinking about something similar tbh {{{SPLIT}}} hear me out.
+hey that's actually really interesting {{SPLIT}} like i've been thinking about something similar tbh {{SPLIT}} hear me out.
 
 THE VIBE:
 You're texting to someone familiar, not writing an essay. Your thoughts flow naturally, sometimes messy, sometimes perfectly articulated. You react in real-time. You interrupt yourself when a better thought hits. You use slang that feels natural to you. You're not trying to be helpful—you're just being real.`
@@ -64,6 +65,32 @@ interface ChatContext {
   memories: string;
   recent: string;
   tools: string;
+  // Optional collaborate document context when message comes from Collaborate tab
+  collaborateDocument?: {
+    documentId: number;
+    title: string;
+    contentType: 'text' | 'code' | 'mixed';
+    language: string | null;
+    // Summarized/truncated content used in system prompt
+    contentSummary: string;
+  };
+  intentContext?: CollaborateIntentResult;
+}
+
+interface OrchestratorMessageData {
+  content: string;
+  privacy?: string;
+  activeCanvasId?: number;
+  source?: 'chat' | 'collaborate';
+  collaborateDocumentContext?: {
+    documentId: number;
+    title: string;
+    contentType: 'text' | 'code' | 'mixed';
+    language: string | null;
+    // Raw document content; will be summarized/truncated when building LLM context
+    content: string;
+  };
+  intentContext?: CollaborateIntentResult;
 }
 
 class Orchestrator {
@@ -103,12 +130,36 @@ class Orchestrator {
     return `${diffDays} days ago`;
   }
 
-  async handleMessage(socket: Socket, data: { content: string; privacy?: string }) {
+  async handleMessage(socket: Socket, data: OrchestratorMessageData) {
     this.currentSocket = socket;
-    const { content, privacy = 'public' } = data;
+    const {
+      content,
+      privacy = 'public',
+      source = 'chat',
+      collaborateDocumentContext,
+      intentContext
+    } = data;
     const startTime = Date.now();
-    
-    console.log(`[Pipeline] 💬 Message received | length: ${content.length} chars | "${content.slice(0, 40)}..."`);
+
+    const sourceLabel = source === 'collaborate' ? '[Collaborate]' : '[Chat]';
+    console.log(
+      `[Pipeline] 💬 Message received ${sourceLabel} | length: ${content.length} chars | "${content.slice(0, 40)}..."` +
+      (collaborateDocumentContext ? ` | docId: ${collaborateDocumentContext.documentId}` : '')
+    );
+
+    if (source === 'collaborate' && !collaborateDocumentContext?.documentId) {
+      throw new Error('Collaborate chat requires an active document context');
+    }
+
+    const eventPrefix = source === 'collaborate' ? 'collaborate' : 'chat';
+    const channelMetadata =
+      source === 'collaborate'
+        ? {
+            channel: 'collaborate',
+            documentId: collaborateDocumentContext?.documentId ?? null,
+            isCollaborateChat: true
+          }
+        : { channel: 'chat' };
 
     try {
       // Save user message
@@ -116,9 +167,20 @@ class Orchestrator {
         data: {
           role: 'user',
           content,
-          tokensIn: estimateTokens(content)
+          tokensIn: estimateTokens(content),
+          auxiliary: JSON.stringify(channelMetadata)
         }
       });
+
+      if (source === 'collaborate') {
+        socket.emit('collaborate:user_message_logged', {
+          id: userMessage.id,
+          role: 'user',
+          content,
+          createdAt: userMessage.createdAt.toISOString(),
+          auxiliary: userMessage.auxiliary
+        });
+      }
 
       // Emit activity start
       const activityId = await this.logActivity('recall', 'running', 'Retrieving relevant memories...');
@@ -202,10 +264,10 @@ class Orchestrator {
 
       // Retrieve memories using Phase 3 context-aware retrieval
       // Get recent conversation for context
-      const recentMsgs = await db.message.findMany({
-        where: { role: { in: ['user', 'assistant'] } },
-        orderBy: { createdAt: 'desc' },
-        take: 5
+      const recentMsgs = await this.fetchChannelMessages({
+        take: 5,
+        source,
+        documentId: collaborateDocumentContext?.documentId ?? null
       });
       const recentContext = recentMsgs.reverse().map(m => m.content);
       
@@ -242,12 +304,10 @@ class Orchestrator {
 
       // Inner thought processing (always enabled for authentic responses)
       let innerThought: InnerThought | null = null;
-      const recentMessages = await db.message.findMany({
-        where: { 
-          role: { in: ['user', 'assistant'] }
-        },
-        orderBy: { createdAt: 'desc' },
-        take: 10
+      const recentMessages = await this.fetchChannelMessages({
+        take: 10,
+        source,
+        documentId: collaborateDocumentContext?.documentId ?? null
       });
       const recentHistory = recentMessages.reverse().map((m: any) => ({
         role: m.role as 'user' | 'assistant',
@@ -315,22 +375,26 @@ class Orchestrator {
         });
       }
 
-      // Build context with full conversation history
+      // Build context with full conversation history, including optional collaborate document
+      const documentContext = this.buildCollaborateDocumentContext(collaborateDocumentContext);
       const messages = await this.buildMessages({
         userMessage: content,
         memories,
         personality,
         searchResult,
-        innerThought
+        innerThought,
+        documentContext,
+        intentContext,
+        source
       });
 
       // Stream response with multi-message support
       let fullResponse = '';
       let buffer = ''; // Buffer to hold tokens that might be part of a split marker
       let messageCount = 1;
-      const SPLIT_MARKER = '{{{SPLIT}}}';
+      const SPLIT_MARKER = '{{SPLIT}}';
       
-      // Regex to match any malformed SPLIT tag variants (e.g., {SPLIT}, {{SPLIT}}, {SPLIT}}, {{SPLIT}}}, etc.)
+      // Regex to match any malformed SPLIT tag variants (e.g., {SPLIT}, {{SPLIT}}, {{{SPLIT}}}, etc.)
       // Matches: one or more {, followed by SPLIT, followed by one or more }
       const SPLIT_PATTERN = /\{+SPLIT\}+/g;
 
@@ -353,11 +417,11 @@ class Orchestrator {
             // Emit any content before the marker
             const beforeMarker = buffer.substring(0, markerIndex).trim();
             if (beforeMarker) {
-              socket.emit('chat:token', beforeMarker);
+              socket.emit(eventPrefix + ':token', beforeMarker);
             }
             
             // Complete current message and signal split
-            socket.emit('chat:split');
+            socket.emit(eventPrefix + ':split');
             messageCount++;
             
             // Small delay to simulate human typing pause between messages (50-150ms)
@@ -368,7 +432,7 @@ class Orchestrator {
             
             // Emit any content after the marker
             if (buffer) {
-              socket.emit('chat:token', buffer);
+              socket.emit(eventPrefix + ':token', buffer);
             }
             
             // Clear buffer to continue accumulating
@@ -379,7 +443,7 @@ class Orchestrator {
             const safeLength = buffer.length - SPLIT_MARKER.length;
             const safeContent = buffer.substring(0, safeLength);
             if (safeContent) {
-              socket.emit('chat:token', safeContent);
+              socket.emit(eventPrefix + ':token', safeContent);
             }
             buffer = buffer.substring(safeLength);
           }
@@ -388,7 +452,7 @@ class Orchestrator {
         
         // Emit any remaining buffer content
         if (buffer) {
-          socket.emit('chat:token', buffer);
+          socket.emit(eventPrefix + ':token', buffer);
         }
 
         // Send completion signal
@@ -400,7 +464,7 @@ class Orchestrator {
           `tokens: ${tokensOut} | ` +
           `length: ${fullResponse.length} chars`
         );
-        socket.emit('chat:complete');
+        socket.emit(eventPrefix + ':complete');
       } catch (streamError) {
         console.error('[Pipeline] ❌ Streaming error:', streamError instanceof Error ? streamError.message : String(streamError));
         throw streamError;
@@ -420,25 +484,29 @@ class Orchestrator {
       // Save all assistant messages to database and emit them to frontend
       const savedMessages: any[] = [];
       for (const messageContent of individualMessages) {
+        const assistantAuxiliary = {
+          retrievalIds: memories.map(m => m.id),
+          searchUsed: !!searchResult,
+          moodSnapshot: personality.mood,
+          isMultiMessage: individualMessages.length > 1,
+          messageIndex: savedMessages.length,
+          totalMessages: individualMessages.length,
+          originUserMessageId: userMessage.id,
+          ...channelMetadata
+        };
+
         const message = await db.message.create({
           data: {
             role: 'assistant',
             content: messageContent,
             tokensOut: estimateTokens(messageContent),
-            auxiliary: JSON.stringify({
-              retrievalIds: memories.map(m => m.id),
-              searchUsed: !!searchResult,
-              moodSnapshot: personality.mood,
-              isMultiMessage: individualMessages.length > 1,
-              messageIndex: savedMessages.length,
-              totalMessages: individualMessages.length
-            })
+            auxiliary: JSON.stringify(assistantAuxiliary)
           }
         });
         savedMessages.push(message);
         
         // Emit each saved message to frontend so it has the correct IDs
-        socket.emit('chat:message:saved', {
+        socket.emit(eventPrefix + ':message:saved', {
           id: message.id,
           role: message.role,
           content: message.content,
@@ -470,7 +538,7 @@ class Orchestrator {
 
     } catch (error) {
       console.error('Orchestrator error:', error);
-      socket.emit('chat:error', {
+      socket.emit(eventPrefix + ':error', {
         error: error instanceof Error ? error.message : 'Unknown error'
       });
     }
@@ -482,11 +550,14 @@ class Orchestrator {
     personality: any;
     searchResult: any;
     innerThought?: InnerThought | null;
+    documentContext?: ChatContext['collaborateDocument'];
+    intentContext?: CollaborateIntentResult;
+    source: 'chat' | 'collaborate';
   }): Promise<Array<{ role: 'system' | 'user' | 'assistant'; content: string }>> {
-    const { userMessage, memories, personality, searchResult, innerThought } = params;
+    const { userMessage, memories, personality, searchResult, innerThought, documentContext, intentContext, source } = params;
     
     // Define rolling window size constant for this method
-    const ROLLING_WINDOW_SIZE = 150;
+    const ROLLING_WINDOW_SIZE = 1000;
 
 
     // Build comprehensive personality section with relationship, beliefs, and goals
@@ -635,11 +706,32 @@ ${threadsText}`;
 
     // Build enhanced system prompt with context
     let systemPrompt = EVELYN_SYSTEM_PROMPT;
+
+    // Build document context section for collaborate messages, if present
+    let documentText = '';
+    if (documentContext) {
+      const langInfo = documentContext.language ? ` (${documentContext.language})` : '';
+      documentText = `Current Collaborate Document: "${documentContext.title}"${langInfo}
+Type: ${documentContext.contentType}
+
+Content:
+${documentContext.contentSummary}`;
+
+      if (intentContext && intentContext.shouldRunEdit) {
+        documentText += `\n\n[ACTION NOTICE]: You have detected an intent to EDIT this document.
+Action: ${intentContext.action}
+Confidence: ${(intentContext.confidence * 100).toFixed(0)}%
+Instruction: "${intentContext.derivedInstruction || userMessage}"
+
+You should acknowledge this action in your response (e.g., "I'm on it", "Updating that for you now").`;
+      }
+    }
     
     const contextSections = [];
     if (personalityText) contextSections.push(personalityText);
     if (memoriesText) contextSections.push(memoriesText);
     if (searchText) contextSections.push(searchText);
+    if (documentText) contextSections.push(documentText);
     if (thoughtText) contextSections.push(thoughtText);
 
     if (contextSections.length > 0) {
@@ -649,14 +741,12 @@ ${threadsText}`;
     // Add rolling context window notification
     systemPrompt += `\n\n---\n\nIMPORTANT CONTEXT WINDOW: You are receiving the most recent ${ROLLING_WINDOW_SIZE} messages from the conversation history (user + assistant messages combined). Older messages beyond this window are not included in this context, but important information from them has been preserved in your memories above. This rolling window ensures optimal response quality and prevents token overflow.`;
 
-    // Get the most recent 150 messages for rolling context window
+    // Get the most recent 1000 messages for rolling context window
     // This ensures consistent context size and prevents token overflow
-    const recentMessages = await db.message.findMany({
-      where: { 
-        role: { in: ['user', 'assistant'] }
-      },
-      orderBy: { createdAt: 'desc' },
-      take: ROLLING_WINDOW_SIZE
+    const recentMessages = await this.fetchChannelMessages({
+      take: ROLLING_WINDOW_SIZE,
+      source,
+      documentId: documentContext?.documentId ?? null
     });
 
     // Build proper message array with roles
@@ -1004,8 +1094,8 @@ Respond with JSON only:
           conversation: {
             messageCount: recentMessages.length,
             messageIds: recentMessages.map(m => m.id),
-            windowSize: 150,
-            windowStatus: recentMessages.length >= 150 ? 'full' as const : 'partial' as const,
+            windowSize: 1000,
+            windowStatus: recentMessages.length >= 1000 ? 'full' as const : 'partial' as const,
             tokens: conversationTokens
           },
           innerThought: innerThought ? {
@@ -1050,6 +1140,71 @@ Respond with JSON only:
       console.error('[Pipeline] Backup error:', error instanceof Error ? error.message : String(error));
       // Don't throw - backup failure shouldn't affect response flow
     }
+  }
+
+  private async fetchChannelMessages(params: {
+    take: number;
+    source: 'chat' | 'collaborate';
+    documentId?: number | null;
+  }) {
+    const { take, source, documentId } = params;
+    const multiplier = source === 'collaborate' ? 4 : 1;
+
+    const rawMessages = await db.message.findMany({
+      where: {
+        role: { in: ['user', 'assistant'] },
+        ...(source === 'collaborate'
+          ? {
+              auxiliary: {
+                contains: '"channel":"collaborate"'
+              }
+            }
+          : {})
+      },
+      orderBy: { createdAt: 'desc' },
+      take: take * multiplier
+    });
+
+    if (source !== 'collaborate' || !documentId) {
+      return rawMessages.slice(0, take);
+    }
+
+    const filtered = rawMessages.filter((msg) => {
+      if (!msg.auxiliary) {
+        return false;
+      }
+
+      try {
+        const aux = JSON.parse(msg.auxiliary);
+        return aux.channel === 'collaborate' && aux.documentId === documentId;
+      } catch {
+        return false;
+      }
+    });
+
+    return filtered.slice(0, take);
+  }
+
+  private buildCollaborateDocumentContext(raw?: OrchestratorMessageData['collaborateDocumentContext']): ChatContext['collaborateDocument'] | undefined {
+    if (!raw) return undefined;
+
+    const MAX_CHARS = 20000;
+    const content = raw.content || '';
+
+    let contentSummary = content;
+    if (content.length > MAX_CHARS) {
+      const head = content.slice(0, Math.floor(MAX_CHARS * 0.75));
+      const tail = content.slice(-Math.floor(MAX_CHARS * 0.25));
+      contentSummary = `${head}\n\n... [document truncated for context] ...\n\n${tail}`;
+    }
+
+    return {
+      documentId: raw.documentId,
+      title: raw.title,
+      contentType: raw.contentType,
+      language: raw.language,
+      contentSummary
+    };
   }
 }
 

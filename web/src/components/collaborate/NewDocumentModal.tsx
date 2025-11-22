@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { X, FileText, Code } from 'lucide-react';
+import { FileText, Code } from 'lucide-react';
 import { useStore } from '../../state/store';
+import { Modal, Button, Input } from '../ui';
 
 interface NewDocumentModalProps {
   onClose: () => void;
@@ -41,80 +42,59 @@ export default function NewDocumentModal({ onClose }: NewDocumentModalProps) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-      <div className="bg-black border border-terminal-border rounded-lg w-full max-w-md shadow-2xl">
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-terminal-border">
-          <h2 className="text-terminal-text font-semibold">Create New Document</h2>
-          <button
-            onClick={onClose}
-            className="p-1 hover:bg-terminal-border rounded transition-colors"
-          >
-            <X className="w-4 h-4 text-terminal-text" />
-          </button>
+    <Modal isOpen={true} onClose={onClose} title="Create New Document" size="md">
+      <div className="space-y-4">
+        {/* Title Input */}
+        <Input
+          label="Document Title *"
+          type="text"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Enter document title..."
+          autoFocus
+        />
+
+        {/* Content Type */}
+        <div>
+          <label className="block text-sm text-zinc-400 mb-2 font-medium">
+            Content Type
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => setContentType('text')}
+              className={`px-4 py-3 rounded-lg border transition-all flex items-center justify-center gap-2
+                         ${contentType === 'text'
+                           ? 'bg-gradient-to-br from-purple-500/20 to-blue-500/20 border-purple-500/50 text-purple-300'
+                           : 'bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10 hover:border-white/20'}`}
+            >
+              <FileText className="w-5 h-5" />
+              <span className="font-medium">Text</span>
+            </button>
+            <button
+              onClick={() => setContentType('code')}
+              className={`px-4 py-3 rounded-lg border transition-all flex items-center justify-center gap-2
+                         ${contentType === 'code'
+                           ? 'bg-gradient-to-br from-purple-500/20 to-blue-500/20 border-purple-500/50 text-purple-300'
+                           : 'bg-white/5 border-white/10 text-zinc-400 hover:bg-white/10 hover:border-white/20'}`}
+            >
+              <Code className="w-5 h-5" />
+              <span className="font-medium">Code</span>
+            </button>
+          </div>
         </div>
 
-        {/* Content */}
-        <div className="p-4 space-y-4">
-          {/* Title Input */}
+        {/* Language Selection (for code) */}
+        {contentType === 'code' && (
           <div>
-            <label className="block text-sm text-terminal-text mb-2">
-              Document Title *
+            <label className="block text-sm text-zinc-400 mb-2 font-medium">
+              Programming Language
             </label>
-            <input
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Enter document title..."
-              autoFocus
-              className="w-full px-3 py-2 bg-black border border-terminal-border rounded
-                       text-terminal-text placeholder-terminal-secondary
-                       focus:outline-none focus:border-terminal-accent"
-            />
-          </div>
-
-          {/* Content Type */}
-          <div>
-            <label className="block text-sm text-terminal-text mb-2">
-              Content Type
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => setContentType('text')}
-                className={`px-4 py-3 rounded border transition-all flex items-center justify-center gap-2
-                           ${contentType === 'text'
-                             ? 'bg-terminal-accent/20 border-terminal-accent text-terminal-accent'
-                             : 'bg-terminal-border/30 border-terminal-border text-terminal-text hover:bg-terminal-border'}`}
-              >
-                <FileText className="w-5 h-5" />
-                <span className="font-medium">Text</span>
-              </button>
-              <button
-                onClick={() => setContentType('code')}
-                className={`px-4 py-3 rounded border transition-all flex items-center justify-center gap-2
-                           ${contentType === 'code'
-                             ? 'bg-terminal-accent/20 border-terminal-accent text-terminal-accent'
-                             : 'bg-terminal-border/30 border-terminal-border text-terminal-text hover:bg-terminal-border'}`}
-              >
-                <Code className="w-5 h-5" />
-                <span className="font-medium">Code</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Language Selection (for code) */}
-          {contentType === 'code' && (
-            <div>
-              <label className="block text-sm text-terminal-text mb-2">
-                Programming Language
-              </label>
-              <select
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                className="w-full px-3 py-2 bg-black border border-terminal-border rounded
-                         text-terminal-text focus:outline-none focus:border-terminal-accent"
-              >
+            <select
+              value={language}
+              onChange={(e) => setLanguage(e.target.value)}
+              className="w-full px-4 py-3 bg-zinc-900/50 border border-white/10 hover:border-white/20 focus:border-purple-500/50 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-purple-500/20 transition-all"
+            >
                 <option value="javascript">JavaScript</option>
                 <option value="typescript">TypeScript</option>
                 <option value="python">Python</option>
@@ -127,39 +107,25 @@ export default function NewDocumentModal({ onClose }: NewDocumentModalProps) {
                 <option value="css">CSS</option>
                 <option value="sql">SQL</option>
                 <option value="markdown">Markdown</option>
-              </select>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="px-4 py-3 border-t border-terminal-border flex justify-end gap-2">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 bg-terminal-border hover:bg-terminal-border/70 
-                     rounded text-terminal-text transition-all"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleCreate}
-            disabled={!title.trim() || isCreating}
-            className="px-4 py-2 bg-terminal-accent/20 hover:bg-terminal-accent/30 
-                     border border-terminal-accent rounded text-terminal-accent
-                     transition-all disabled:opacity-50 disabled:cursor-not-allowed
-                     flex items-center gap-2"
-          >
-            {isCreating ? (
-              <>
-                <div className="w-4 h-4 border-2 border-terminal-accent border-t-transparent rounded-full animate-spin" />
-                Creating...
-              </>
-            ) : (
-              'Create Document'
-            )}
-          </button>
-        </div>
+            </select>
+          </div>
+        )}
       </div>
-    </div>
+      
+      {/* Footer with Button components */}
+      <div className="flex justify-end gap-3">
+        <Button variant="secondary" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button 
+          variant="primary" 
+          onClick={handleCreate}
+          disabled={!title.trim() || isCreating}
+          loading={isCreating}
+        >
+          Create Document
+        </Button>
+      </div>
+    </Modal>
   );
 }

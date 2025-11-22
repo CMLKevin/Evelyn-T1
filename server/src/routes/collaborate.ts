@@ -125,6 +125,65 @@ router.get('/api/collaborate/:id', async (req, res) => {
   }
 });
 
+// Get collaborate chat history for a document
+router.get('/api/collaborate/:id/chat', async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id);
+
+    if (Number.isNaN(documentId)) {
+      return res.status(400).json({ error: 'Invalid document ID' });
+    }
+
+    const rawMessages = await prisma.message.findMany({
+      where: {
+        role: { in: ['user', 'assistant'] },
+        auxiliary: {
+          contains: '"channel":"collaborate"'
+        }
+      },
+      orderBy: { createdAt: 'asc' }
+    });
+
+    const filtered = rawMessages
+      .map((msg) => {
+        if (!msg.auxiliary) {
+          return null;
+        }
+
+        try {
+          const aux = JSON.parse(msg.auxiliary);
+
+          if (aux.channel !== 'collaborate' || aux.documentId !== documentId) {
+            return null;
+          }
+
+          return {
+            id: msg.id,
+            role: msg.role === 'assistant' ? 'evelyn' : 'user',
+            content: msg.content,
+            timestamp: msg.createdAt.toISOString(),
+            messageIndex: typeof aux.messageIndex === 'number'
+              ? aux.messageIndex
+              : undefined
+          };
+        } catch {
+          return null;
+        }
+      })
+      .filter((msg): msg is { id: number; role: 'user' | 'evelyn'; content: string; timestamp: string; messageIndex?: number } => msg !== null);
+
+    const result = filtered.map((msg, idx) => ({
+      ...msg,
+      messageIndex: msg.messageIndex ?? idx
+    }));
+
+    return res.json(result);
+  } catch (error) {
+    console.error('[Collaborate] Load chat history error:', error);
+    return res.status(500).json({ error: 'Failed to load collaborate chat history' });
+  }
+});
+
 // Update document content
 router.put('/api/collaborate/:id', async (req, res) => {
   try {
