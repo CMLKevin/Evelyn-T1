@@ -55,11 +55,8 @@ export async function embed(text: string): Promise<number[]> {
   
   const cached = embeddingCache.get(truncatedText);
   if (cached) {
-    console.log('[Embeddings] Cache hit');
     return cached;
   }
-
-  console.log(`[Embeddings] Generating embedding for text (${truncatedText.length} chars)...`);
   try {
     const embedding = await openRouterClient.embed(truncatedText);
     
@@ -67,7 +64,6 @@ export async function embed(text: string): Promise<number[]> {
       throw new Error('Invalid embedding response: empty or not an array');
     }
     
-    console.log(`[Embeddings] Embedding generated, dimension: ${embedding.length}`);
     embeddingCache.set(truncatedText, embedding);
     return embedding;
   } catch (error) {
@@ -100,7 +96,6 @@ export async function embedBatch(texts: string[]): Promise<number[][]> {
   texts.forEach((text, idx) => {
     // Skip empty texts
     if (!text || text.trim().length === 0) {
-      console.warn(`[Embeddings] Skipping empty text at index ${idx}`);
       return;
     }
     

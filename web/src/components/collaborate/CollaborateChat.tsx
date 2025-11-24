@@ -3,11 +3,13 @@ import { useStore } from '../../state/store';
 import { Send, ChevronLeft, MessageSquare, Sparkles, X, CheckCircle2, AlertCircle, Clock, Copy, ThumbsUp, ThumbsDown, RefreshCw, ChevronDown, Lightbulb, Code2, Check } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { wsClient } from '../../lib/ws';
+import AgenticEditProgress from './AgenticEditProgress';
 
 export default function CollaborateChat() {
   const { 
     collaborateState,
-    addCollaborateChatMessage 
+    addCollaborateChatMessage,
+    activities
   } = useStore();
   const setCollaborateIntentDetection = useStore(state => state.setCollaborateIntentDetection);
 
@@ -181,6 +183,26 @@ export default function CollaborateChat() {
 
       {/* Messages */}
       <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-5 py-6 space-y-6 terminal-scrollbar relative">
+        {/* Agentic Code Editor Progress */}
+        {activeDocument && (() => {
+          // Find the most recent code_edit activity (running, done, or error)
+          const codeEditActivities = activities.filter(a => 
+            a.tool === 'code_edit' && 
+            (a.status === 'running' || a.status === 'done' || a.status === 'error')
+          );
+          // Get the most recent one (last in array)
+          const codeEditActivity = codeEditActivities[codeEditActivities.length - 1];
+          
+          // Debug logging
+          console.log('[CollaborateChat] All activities:', activities.length);
+          console.log('[CollaborateChat] Code edit activities:', codeEditActivities.length);
+          if (codeEditActivity) {
+            console.log('[CollaborateChat] Rendering agentic editor:', codeEditActivity);
+          }
+          
+          return codeEditActivity ? <AgenticEditProgress activity={codeEditActivity as any} /> : null;
+        })()}
+
         {activeDocument && agentTask && (
           <div className="animate-fade-in-down mb-4">
             <div className="px-4 py-3 bg-orange/5 border-2 border-orange">

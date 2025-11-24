@@ -450,15 +450,16 @@ export function setupWebSocket(io: Server) {
         const resolvedContentType = data.document?.contentType ?? (document.contentType as 'text' | 'code' | 'mixed');
         const resolvedLanguage = data.document?.language ?? document.language ?? null;
 
-        const intentResult = await determineCollaborateIntent(data.message, {
-          title: resolvedTitle,
-          content: resolvedContent,
-          contentType: resolvedContentType,
-          language: resolvedLanguage
-        }).catch((intentError) => {
-          console.error('[Collaborate] Intent detection failed:', intentError);
-          return null;
-        });
+        // DISABLED: Old intent detection system - now using new agentic editor
+        // const intentResult = await determineCollaborateIntent(data.message, {
+        //   title: resolvedTitle,
+        //   content: resolvedContent,
+        //   contentType: resolvedContentType,
+        //   language: resolvedLanguage
+        // }).catch((intentError) => {
+        //   console.error('[Collaborate] Intent detection failed:', intentError);
+        //   return null;
+        // });
 
         await orchestrator.handleMessage(socket, {
           content: data.message,
@@ -470,37 +471,39 @@ export function setupWebSocket(io: Server) {
             contentType: resolvedContentType,
             language: resolvedLanguage,
             content: resolvedContent
-          },
-          intentContext: intentResult || undefined
+          }
+          // intentContext removed - using new agentic editor instead
         });
 
-        if (intentResult) {
-          const detectionPayload = {
-            documentId: document.id,
-            intent: intentResult.intent,
-            action: intentResult.action,
-            confidence: intentResult.confidence,
-            instruction: intentResult.derivedInstruction || data.message,
-            autoRunTriggered: intentResult.shouldRunEdit,
-            detectedAt: new Date().toISOString(),
-            originMessageIndex: data.messageIndex ?? null
-          };
-
-          socket.emit('collaborate:intent_detected', detectionPayload);
-
-          if (intentResult.shouldRunEdit) {
-            runCollaborateAgentTask(io, socket, {
-              documentId: document.id,
-              instruction: intentResult.derivedInstruction || data.message,
-              content: resolvedContent,
-              contentType: resolvedContentType,
-              language: resolvedLanguage,
-              originMessageIndex: data.messageIndex ?? null
-            }).catch((autoError) => {
-              console.error('Auto collaborate edit failed:', autoError);
-            });
-          }
-        }
+        // DISABLED: Old intent detection and auto-edit system
+        // The new agentic editor in orchestrator.ts handles all of this now
+        // if (intentResult) {
+        //   const detectionPayload = {
+        //     documentId: document.id,
+        //     intent: intentResult.intent,
+        //     action: intentResult.action,
+        //     confidence: intentResult.confidence,
+        //     instruction: intentResult.derivedInstruction || data.message,
+        //     autoRunTriggered: intentResult.shouldRunEdit,
+        //     detectedAt: new Date().toISOString(),
+        //     originMessageIndex: data.messageIndex ?? null
+        //   };
+        //
+        //   socket.emit('collaborate:intent_detected', detectionPayload);
+        //
+        //   if (intentResult.shouldRunEdit) {
+        //     runCollaborateAgentTask(io, socket, {
+        //       documentId: document.id,
+        //       instruction: intentResult.derivedInstruction || data.message,
+        //       content: resolvedContent,
+        //       contentType: resolvedContentType,
+        //       language: resolvedLanguage,
+        //       originMessageIndex: data.messageIndex ?? null
+        //     }).catch((autoError) => {
+        //       console.error('Auto collaborate edit failed:', autoError);
+        //     });
+        //   }
+        // }
       } catch (error) {
         console.error('Collaborate chat error:', error);
         socket.emit('collaborate:error', {

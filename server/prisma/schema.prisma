@@ -123,6 +123,7 @@ model Settings {
   dreamSchedule                String? // cron or null
   enableDiagnostics            Boolean   @default(true)
   searchPreference             String    @default("auto") // auto | never | ask
+  includeCodebaseContext       Boolean   @default(false) // Include collaborate document context in chat
 
   conversationsSinceReflection Int       @default(0) // Persisted counter for micro-reflection
   lastReflectionAt             DateTime? // Timestamp of last deep reflection

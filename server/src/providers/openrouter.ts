@@ -237,7 +237,7 @@ class OpenRouterClient {
         model: selectedModel,
         messages,
         stream: true,
-        temperature: 0.75,
+        temperature: 0.8,
         max_tokens: 8192, // Doubled from 4096 for longer responses
       };
 
@@ -315,8 +315,9 @@ class OpenRouterClient {
     messages: Message[],
     model: string = MODEL_CHAT,
     provider?: ProviderPreferences,
+    temperature: number = 0.7,
   ): Promise<string> {
-    console.log(`[OpenRouter] Completion request with model: ${model}`);
+    console.log(`[OpenRouter] Completion request with model: ${model}, temperature: ${temperature}`);
     if (provider) {
       console.log(`[OpenRouter] Using provider preferences:`, provider);
     }
@@ -325,7 +326,7 @@ class OpenRouterClient {
       model,
       messages,
       stream: false,
-      temperature: 0.7,
+      temperature,
       max_tokens: 8192, // Doubled from 4096 for longer responses
     };
 
@@ -403,8 +404,11 @@ class OpenRouterClient {
   }
 
   async embed(text: string): Promise<number[]> {
-    console.log(`[OpenRouter] Embedding request for model: ${EMBEDDING_MODEL}`);
     try {
+      // Add timeout to prevent hanging on slow/failing API responses
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
       const response = await fetch(`${this.baseUrl}/embeddings`, {
         method: 'POST',
         headers: this.getHeaders(),
@@ -412,7 +416,10 @@ class OpenRouterClient {
           model: EMBEDDING_MODEL,
           input: text,
         }),
+        signal: controller.signal,
       });
+      
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorBody = await response.text();
@@ -476,15 +483,13 @@ class OpenRouterClient {
         throw new Error(
           'OpenRouter returned invalid embedding format: embedding is not an array',
         );
-      }
-
-      console.log(
-        `[OpenRouter] Embedding received, dimension: ${firstEmbedding.embedding.length}, tokens: ${
-          data.usage?.prompt_tokens ?? 'unknown'
-        }`,
-      );
+      };
       return firstEmbedding.embedding;
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.error('[OpenRouter] Embedding request timeout (10s) - API too slow');
+        throw new Error('OpenRouter embedding timeout: API response took longer than 10 seconds');
+      }
       console.error('[OpenRouter] Embedding request failed:', error);
       throw error;
     }
@@ -495,6 +500,10 @@ class OpenRouterClient {
       `[OpenRouter] Batch embedding request for ${texts.length} texts with model: ${EMBEDDING_MODEL}`,
     );
     try {
+      // Add timeout to prevent hanging on slow/failing API responses
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout for batch
+      
       const response = await fetch(`${this.baseUrl}/embeddings`, {
         method: 'POST',
         headers: this.getHeaders(),
@@ -502,7 +511,10 @@ class OpenRouterClient {
           model: EMBEDDING_MODEL,
           input: texts,
         }),
+        signal: controller.signal,
       });
+      
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorBody = await response.text();
@@ -587,6 +599,10 @@ class OpenRouterClient {
       );
       return embeddings;
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.error('[OpenRouter] Batch embedding request timeout (15s) - API too slow');
+        throw new Error('OpenRouter batch embedding timeout: API response took longer than 15 seconds');
+      }
       console.error('[OpenRouter] Batch embedding request failed:', error);
       throw error;
     }

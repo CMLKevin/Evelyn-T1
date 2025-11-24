@@ -1376,11 +1376,17 @@ Return ONLY a JSON array of the 3 variations, nothing else:`;
         return [];
       }
 
-      // Calculate salience for each candidate
+      // Calculate salience for each candidate with error handling
       const scoredMemories = await Promise.all(
         candidates.map(async (memory) => {
-          const salience = await this.calculateContextualSalience(memory.id, recentMessages, currentMood);
-          return { memory, salience };
+          try {
+            const salience = await this.calculateContextualSalience(memory.id, recentMessages, currentMood);
+            return { memory, salience };
+          } catch (salienceError) {
+            console.error(`[Memory] Error calculating salience for memory ${memory.id}:`, salienceError instanceof Error ? salienceError.message : String(salienceError));
+            // Fallback to base importance if salience calculation fails
+            return { memory, salience: memory.importance };
+          }
         })
       );
 

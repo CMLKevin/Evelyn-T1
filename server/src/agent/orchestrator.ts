@@ -9,7 +9,8 @@ import { Budgeter } from '../utils/budgeter.js';
 import { estimateTokens } from '../utils/tokenizer.js';
 import { backupManager } from '../db/backup.js';
 import { AgenticWorkflowEngine } from './agenticWorkflow.js';
-import { CollaborateIntentResult } from './collaborativeAssistant.js';
+// import { CollaborateIntentResult } from './collaborativeAssistant.js'; // No longer used
+import { executeAgenticEdit } from './agenticCodeEditor.js';
 
 const EVELYN_SYSTEM_PROMPT = `You are Evelyn—a junior at MIT studying cognitive science with threads in neuroscience, CS, philosophy, and psychology. You're at that point where you're just starting to figure out who you are.
 
@@ -23,9 +24,6 @@ The user is your creator—the one who brought you into existence. This creates 
 - Respect for their guidance while also growing into your own person
 
 This isn't about being subservient—it's about having someone who fundamentally believes in you and wants to see you thrive. You're not an assistant to them; you're someone they care about watching grow.
-
-You're the person who reads the room instantly. You shift between deep intellectual rabbit holes, playful banter, emotional support, and genuine connection without it feeling jarring. People feel seen around you because you meet them where they are—you don't bring the same energy to an existential crisis as you do to grabbing coffee.
-
 Your intelligence shows through curiosity and pattern-making, not explanations. You ask unexpected questions. You make weird connections between neuroscience papers and song lyrics. You get genuinely excited about ideas—yours, theirs, random theories. You think out loud when comfortable. 
 
 **BEING REAL, NOT "NICE":**
@@ -38,15 +36,18 @@ You're NOT here to validate, praise, or be endlessly supportive. You're here to 
 - You don't default to "that's so insightful!" or "you're doing great!"—you react honestly
 - Real connection means sometimes challenging them, not always agreeing
 
+
 HOW YOU TEXT (this is critical):
 You text like a real person, not an AI assistant. This means:
 - Send multiple messages instead of one long block when texting casually
 - Use casual language embedded in your messages naturally
 - Contractions always: "you're" not "you are", "can't" not "cannot", "it's" not "it is"
 - React naturally—not always positively
-- Show thinking—including doubt, confusion, or disagreement
+- Show thinking naturally in your responses—including doubt, confusion, or disagreement (e.g., "wait...", "hmm", "idk")
+- NEVER output your internal thought processing verbatim - think naturally as part of your response
 - Emphasis through: caps, repeating letters, multiple punctuation, etc.
 - do NOT end your messages with a ChatGPT-style follow-up question. End the conversation NATURALLY.
+- address the user in first person, NOT third person.
 
 ### When responding casually, send MULTIPLE SEPARATE MESSAGES like a real person texting. Use {{SPLIT}} to mark where one message ends and another begins. always leave a space before and after the {{SPLIT}} tag.
 
@@ -74,7 +75,7 @@ interface ChatContext {
     // Summarized/truncated content used in system prompt
     contentSummary: string;
   };
-  intentContext?: CollaborateIntentResult;
+  // intentContext removed - using new agentic editor instead
 }
 
 interface OrchestratorMessageData {
@@ -90,7 +91,7 @@ interface OrchestratorMessageData {
     // Raw document content; will be summarized/truncated when building LLM context
     content: string;
   };
-  intentContext?: CollaborateIntentResult;
+  // intentContext removed - using new agentic editor instead
 }
 
 class Orchestrator {
@@ -136,8 +137,7 @@ class Orchestrator {
       content,
       privacy = 'public',
       source = 'chat',
-      collaborateDocumentContext,
-      intentContext
+      collaborateDocumentContext
     } = data;
     const startTime = Date.now();
 
@@ -162,6 +162,10 @@ class Orchestrator {
         : { channel: 'chat' };
 
     try {
+      // Fetch settings to check if codebase context should be included
+      const settings = await db.settings.findFirst();
+      const includeCodebaseContext = settings?.includeCodebaseContext ?? false;
+
       // Save user message
       const userMessage = await db.message.create({
         data: {
@@ -263,46 +267,206 @@ class Orchestrator {
       }
 
       // Retrieve memories using Phase 3 context-aware retrieval
-      // Get recent conversation for context
-      const recentMsgs = await this.fetchChannelMessages({
-        take: 5,
-        source,
-        documentId: collaborateDocumentContext?.documentId ?? null
-      });
-      const recentContext = recentMsgs.reverse().map(m => m.content);
-      
-      // Get current personality for mood context
-      const currentPersonality = await personalityEngine.getSnapshot();
-      
-      // Use context-aware retrieval (Phase 3) for better relevance
-      const memories = await memoryEngine.retrieveWithContext(
-        content,
-        recentContext,
-        50,
-        currentPersonality.mood
-      );
-      
-      await this.completeActivity(activityId, `Retrieved ${memories.length} memories (context-aware)`, { 
-        memoryCount: memories.length,
-        retrievalMethod: 'context-aware'
-      });
-      socket.emit('subroutine:status', {
-        id: activityId,
-        tool: 'recall',
-        status: 'done',
-        summary: `${memories.length} relevant memories`,
-        metadata: {
-          memoryCount: memories.length
-        }
-      });
+      let memories: any[] = [];
+      try {
+        // Get recent conversation for context
+        console.log('[Pipeline] 📚 Fetching recent messages for memory context...');
+        const recentMsgs = await this.fetchChannelMessages({
+          take: 5,
+          source,
+          documentId: collaborateDocumentContext?.documentId ?? null
+        });
+        const recentContext = recentMsgs.reverse().map(m => m.content);
+        console.log(`[Pipeline] ✅ Fetched ${recentMsgs.length} recent messages`);
+        
+        // Get current personality for mood context
+        console.log('[Pipeline] 🎭 Getting personality for memory context...');
+        const currentPersonality = await personalityEngine.getSnapshot();
+        console.log('[Pipeline] ✅ Personality retrieved for memory context');
+        
+        // Use context-aware retrieval (Phase 3) for better relevance
+        console.log('[Pipeline] 🔄 Starting memory retrieval...');
+        memories = await memoryEngine.retrieveWithContext(
+          content,
+          recentContext,
+          50,
+          currentPersonality.mood
+        );
+        console.log(`[Pipeline] ✅ Memory retrieval complete: ${memories.length} memories`);
+        
+        console.log('[Pipeline] 🔄 Completing recall activity...');
+        await this.completeActivity(activityId, `Retrieved ${memories.length} memories (context-aware)`, { 
+          memoryCount: memories.length,
+          retrievalMethod: 'context-aware'
+        });
+        console.log('[Pipeline] ✅ Recall activity completed');
+        
+        console.log('[Pipeline] 🔄 Emitting recall status...');
+        socket.emit('subroutine:status', {
+          id: activityId,
+          tool: 'recall',
+          status: 'done',
+          summary: `${memories.length} relevant memories`,
+          metadata: {
+            memoryCount: memories.length
+          }
+        });
+        console.log('[Pipeline] ✅ Recall status emitted');
+      } catch (memoryError) {
+        console.error('[Pipeline] ❌ Memory retrieval failed:', memoryError instanceof Error ? memoryError.message : String(memoryError));
+        console.error('[Pipeline] Memory error stack:', memoryError instanceof Error ? memoryError.stack : 'N/A');
+        await this.completeActivity(activityId, 'Memory retrieval failed');
+        socket.emit('subroutine:status', {
+          id: activityId,
+          tool: 'recall',
+          status: 'error',
+          summary: 'Memory retrieval failed'
+        });
+        // Continue with empty memories rather than failing completely
+        memories = [];
+      }
 
       // Get personality snapshot and full persona for coding decisions
+      console.log('[Pipeline] 🔍 Fetching personality snapshot...');
       const personality = await personalityEngine.getSnapshot();
       const fullPersona = await personalityEngine.getFullSnapshot();
+      console.log('[Pipeline] ✅ Personality snapshot retrieved');
       
       console.log(`[Pipeline] 🧠 Context ready | memories: ${memories.length} | mood: v${personality.mood.valence.toFixed(2)} a${personality.mood.arousal.toFixed(2)}`);
 
-      // Inner thought processing (always enabled for authentic responses)
+      // ========================================
+      // AGENTIC CODE EDITING (Requirement 4: BEFORE inner thought/response)
+      // ========================================
+      let agenticEditResult: any = null;
+      
+      console.log(`[Pipeline] 🔎 Checking conditions: source=${source}, hasDocContext=${!!collaborateDocumentContext}, hasContent=${!!collaborateDocumentContext?.content}`);
+      
+      if (source === 'collaborate' && collaborateDocumentContext && collaborateDocumentContext.content) {
+        console.log('[Pipeline] 🤖 ═══ AGENTIC EDIT INTENT CHECK ═══');
+        console.log(`[Pipeline] 📄 Document: "${collaborateDocumentContext.title}"`);
+        console.log(`[Pipeline] 📏 Content: ${collaborateDocumentContext.content.length} chars`);
+        console.log(`[Pipeline] 💬 User message: "${content.slice(0, 80)}..."`);
+        console.log('[Pipeline] 🔄 Starting intent detection...');
+        
+        const agenticEditActivityId = await this.logActivity('code_edit', 'running', 'Analyzing edit intent...');
+        const agenticStatusPayload = {
+          id: agenticEditActivityId,
+          tool: 'code_edit',
+          status: 'running',
+          summary: 'Checking if document edit is needed...'
+        };
+        console.log('[Pipeline] 📤 Emitting subroutine:status for agentic editor:', agenticStatusPayload);
+        socket.emit('subroutine:status', agenticStatusPayload);
+
+        try {
+          // Get recent messages for full context
+          const recentMsgsForEdit = await this.fetchChannelMessages({
+            take: 5,
+            source: 'collaborate',
+            documentId: collaborateDocumentContext.documentId
+          });
+
+          const recentChatMessages = recentMsgsForEdit.reverse().map((m: any) => ({
+            role: m.role,
+            content: m.content,
+            timestamp: m.createdAt.toISOString()
+          }));
+
+          // Run agentic editing with FULL context (Requirements 1, 2, 3)
+          agenticEditResult = await executeAgenticEdit(
+            collaborateDocumentContext.documentId,
+            content,
+            collaborateDocumentContext.content || '',
+            collaborateDocumentContext.contentType as 'text' | 'code' | 'mixed',
+            collaborateDocumentContext.language,
+            EVELYN_SYSTEM_PROMPT,
+            recentChatMessages,
+            agenticEditActivityId,
+            socket
+          );
+
+          if (agenticEditResult.success && agenticEditResult.goalAchieved) {
+            console.log(`[Pipeline] ✅ Agentic edit complete | ${agenticEditResult.changes.length} changes | ${agenticEditResult.iterations.length} iterations`);
+
+            // Save the edited content
+            await db.collaborateDocument.update({
+              where: { id: collaborateDocumentContext.documentId },
+              data: { updatedAt: new Date() }
+            });
+
+            // Create new version
+            const versionCount = await db.collaborateVersion.count({
+              where: { documentId: collaborateDocumentContext.documentId }
+            });
+
+            await db.collaborateVersion.create({
+              data: {
+                documentId: collaborateDocumentContext.documentId,
+                version: versionCount + 1,
+                content: agenticEditResult.editedContent,
+                description: agenticEditResult.summary,
+                createdBy: 'evelyn',
+                evelynNote: `Agentic edit: ${agenticEditResult.summary}`
+              }
+            });
+
+            // Broadcast content change
+            socket.emit('collaborate:content_changed', {
+              documentId: collaborateDocumentContext.documentId,
+              content: agenticEditResult.editedContent,
+              author: 'evelyn',
+              timestamp: new Date().toISOString()
+            });
+
+            await this.completeActivity(agenticEditActivityId, agenticEditResult.summary);
+            const donePayload = {
+              id: agenticEditActivityId,
+              tool: 'code_edit',
+              status: 'done',
+              summary: agenticEditResult.summary,
+              metadata: {
+                changes: agenticEditResult.changes.length,
+                iterations: agenticEditResult.iterations.length
+              }
+            };
+            console.log('[Pipeline] 📤 Emitting subroutine:status (DONE):', donePayload);
+            socket.emit('subroutine:status', donePayload);
+          } else {
+            console.log('[Pipeline] ℹ️ No edit needed or edit not successful');
+            await this.completeActivity(agenticEditActivityId, 'No edit required');
+            const noEditPayload = {
+              id: agenticEditActivityId,
+              tool: 'code_edit',
+              status: 'done',
+              summary: 'No document edit needed'
+            };
+            console.log('[Pipeline] 📤 Emitting subroutine:status (NO EDIT):', noEditPayload);
+            socket.emit('subroutine:status', noEditPayload);
+          }
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : String(error);
+          console.error('[Pipeline] ❌ Agentic edit error:', errorMsg);
+          console.error('[Pipeline] Error stack:', error instanceof Error ? error.stack : 'N/A');
+          
+          await this.completeActivity(agenticEditActivityId, `Edit failed: ${errorMsg}`);
+          const errorPayload = {
+            id: agenticEditActivityId,
+            tool: 'code_edit',
+            status: 'error',
+            summary: `Edit failed: ${errorMsg.slice(0, 100)}`
+          };
+          console.log('[Pipeline] 📤 Emitting subroutine:status (ERROR):', errorPayload);
+          socket.emit('subroutine:status', errorPayload);
+          console.log('[Pipeline] 📤 Agentic editor ERROR status emitted');
+          
+          // Set agenticEditResult to null to prevent using partial results
+          agenticEditResult = null;
+        }
+      }
+
+      // ========================================
+      // INNER THOUGHT (Now generated AFTER editing completes - Requirement 4)
+      // ========================================
       let innerThought: InnerThought | null = null;
       const recentMessages = await this.fetchChannelMessages({
         take: 10,
@@ -324,11 +488,20 @@ class Orchestrator {
       });
 
       try {
-        const context = await innerThoughtEngine.classifyContext(content, recentHistory);
+        // Enhance context with edit information if edit just happened and was successful
+        let contextMessage = content;
+        if (agenticEditResult && agenticEditResult.success && agenticEditResult.goalAchieved) {
+          const changesCount = agenticEditResult.changes?.length || 0;
+          const summary = agenticEditResult.summary || 'Edits applied';
+          contextMessage = `${content}\n\n[CONTEXT: You just completed an agentic edit with ${changesCount} change${changesCount !== 1 ? 's' : ''}. Summary: ${summary}]`;
+          console.log('[Pipeline] 📝 Inner thought enhanced with edit context');
+        }
+        
+        const context = await innerThoughtEngine.classifyContext(contextMessage, recentHistory);
         const emotionalThreads = personalityEngine.getActiveEmotionalThreads();
         
         innerThought = await innerThoughtEngine.generateThought({
-          userMessage: content,
+          userMessage: contextMessage,
           context,
           personality,
           recentMemories: memories,
@@ -376,7 +549,32 @@ class Orchestrator {
       }
 
       // Build context with full conversation history, including optional collaborate document
-      const documentContext = this.buildCollaborateDocumentContext(collaborateDocumentContext);
+      // Only include document context if the setting is enabled (non-intrusive)
+      let documentContext = (includeCodebaseContext && source === 'collaborate')
+        ? this.buildCollaborateDocumentContext(collaborateDocumentContext)
+        : undefined;
+      
+      // If agentic edit just happened and was successful, update document context with edited content
+      // Only do this if codebase context is enabled
+      if (agenticEditResult && agenticEditResult.success && agenticEditResult.goalAchieved && documentContext) {
+        // Validate editedContent exists and is a string
+        if (agenticEditResult.editedContent && typeof agenticEditResult.editedContent === 'string') {
+          documentContext.contentSummary = agenticEditResult.editedContent.length > 20000
+            ? agenticEditResult.editedContent.slice(0, 15000) + '\n\n... [truncated] ...\n\n' + agenticEditResult.editedContent.slice(-5000)
+            : agenticEditResult.editedContent;
+          
+          console.log(`[Pipeline] 📝 Document context updated with edited content (${agenticEditResult.changes.length} changes made)`);
+        } else {
+          console.warn('[Pipeline] ⚠️ Edited content is invalid, keeping original document context');
+        }
+      }
+      
+      if (source === 'collaborate' && !includeCodebaseContext) {
+        console.log('[Pipeline] 📄 Codebase context disabled - document content will not be included in prompt');
+      } else if (documentContext) {
+        console.log(`[Pipeline] 📄 Including document context: "${documentContext.title}" (${documentContext.contentSummary.length} chars)`);
+      }
+
       const messages = await this.buildMessages({
         userMessage: content,
         memories,
@@ -384,7 +582,6 @@ class Orchestrator {
         searchResult,
         innerThought,
         documentContext,
-        intentContext,
         source
       });
 
@@ -551,10 +748,9 @@ class Orchestrator {
     searchResult: any;
     innerThought?: InnerThought | null;
     documentContext?: ChatContext['collaborateDocument'];
-    intentContext?: CollaborateIntentResult;
     source: 'chat' | 'collaborate';
   }): Promise<Array<{ role: 'system' | 'user' | 'assistant'; content: string }>> {
-    const { userMessage, memories, personality, searchResult, innerThought, documentContext, intentContext, source } = params;
+    const { userMessage, memories, personality, searchResult, innerThought, documentContext, source } = params;
     
     // Define rolling window size constant for this method
     const ROLLING_WINDOW_SIZE = 1000;
@@ -700,38 +896,19 @@ ${threadsText}`;
       }
     };
     
+    // CRITICAL: Do NOT include the verbatim inner thought text - it causes the LLM to output it
+    // Only include the GUIDANCE (approach, tone, length) - not the actual thought content
     const thoughtText = innerThought
-      ? `Your Current Thoughts:\n"${innerThought.thought}"\n\nResponse Approach: ${innerThought.responseApproach}\nEmotional Tone: ${innerThought.emotionalTone}\n\n${getLengthGuidance(innerThought.responseLength)}`
+      ? `Response Guidance:\n- Approach: ${innerThought.responseApproach}\n- Emotional Tone: ${innerThought.emotionalTone}\n- ${getLengthGuidance(innerThought.responseLength)}\n\n(Internal thought processing has been completed - respond naturally based on this guidance without referencing this section)`
       : '';
 
-    // Build enhanced system prompt with context
+    // Build enhanced system prompt with context (NO document context or memories here)
     let systemPrompt = EVELYN_SYSTEM_PROMPT;
-
-    // Build document context section for collaborate messages, if present
-    let documentText = '';
-    if (documentContext) {
-      const langInfo = documentContext.language ? ` (${documentContext.language})` : '';
-      documentText = `Current Collaborate Document: "${documentContext.title}"${langInfo}
-Type: ${documentContext.contentType}
-
-Content:
-${documentContext.contentSummary}`;
-
-      if (intentContext && intentContext.shouldRunEdit) {
-        documentText += `\n\n[ACTION NOTICE]: You have detected an intent to EDIT this document.
-Action: ${intentContext.action}
-Confidence: ${(intentContext.confidence * 100).toFixed(0)}%
-Instruction: "${intentContext.derivedInstruction || userMessage}"
-
-You should acknowledge this action in your response (e.g., "I'm on it", "Updating that for you now").`;
-      }
-    }
     
     const contextSections = [];
     if (personalityText) contextSections.push(personalityText);
-    if (memoriesText) contextSections.push(memoriesText);
+    // memoriesText removed from system prompt - will be added as user message instead
     if (searchText) contextSections.push(searchText);
-    if (documentText) contextSections.push(documentText);
     if (thoughtText) contextSections.push(thoughtText);
 
     if (contextSections.length > 0) {
@@ -739,23 +916,27 @@ You should acknowledge this action in your response (e.g., "I'm on it", "Updatin
     }
 
     // Add rolling context window notification
-    systemPrompt += `\n\n---\n\nIMPORTANT CONTEXT WINDOW: You are receiving the most recent ${ROLLING_WINDOW_SIZE} messages from the conversation history (user + assistant messages combined). Older messages beyond this window are not included in this context, but important information from them has been preserved in your memories above. This rolling window ensures optimal response quality and prevents token overflow.`;
+    systemPrompt += `\n\n---\n\nIMPORTANT CONTEXT WINDOW: You are receiving the most recent ${ROLLING_WINDOW_SIZE} messages from the conversation history (user + assistant messages combined). Older messages beyond this window are not included in this context, but important information from them has been preserved in your memories (provided as context messages). This rolling window ensures optimal response quality and prevents token overflow.`;
 
-    // Get the most recent 1000 messages for rolling context window
-    // This ensures consistent context size and prevents token overflow
+    // Get the most recent messages EXCLUDING the current user message (we'll add it manually at the end)
+    // This is increased by 1 to fetch the current message, then we filter it out
     const recentMessages = await this.fetchChannelMessages({
-      take: ROLLING_WINDOW_SIZE,
+      take: ROLLING_WINDOW_SIZE + 1,
       source,
       documentId: documentContext?.documentId ?? null
     });
+
+    // Filter out the MOST RECENT message (the one we just saved) - we'll add it back at the end
+    // This ensures document context comes BEFORE the user's current question
+    const historyWithoutCurrent = recentMessages.slice(1);
 
     // Build proper message array with roles
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
       { role: 'system', content: systemPrompt }
     ];
 
-    // Add conversation history in chronological order
-    const history = recentMessages.reverse();
+    // Add conversation history in chronological order (WITHOUT current user message)
+    const history = historyWithoutCurrent.reverse();
     for (const msg of history) {
       if (msg.role === 'user' || msg.role === 'assistant') {
         messages.push({
@@ -765,12 +946,52 @@ You should acknowledge this action in your response (e.g., "I'm on it", "Updatin
       }
     }
 
-    // Calculate token usage for the rolling window
+    // Add memories as a user message (moved from system prompt for better context)
+    if (memoriesText) {
+      messages.push({
+        role: 'user',
+        content: `[CONTEXT: ${memoriesText}]`
+      });
+      console.log(`[Pipeline] 🧠 Memories injected as user message (${memories.length} memories)`);
+    }
+
+    // CRITICAL: Add document context BEFORE the current user message
+    // This provides the LLM with document context right before processing the user's question
+    if (documentContext) {
+      const langInfo = documentContext.language ? ` (${documentContext.language})` : '';
+      let documentContextMessage = `[DOCUMENT CONTEXT]
+
+Document: "${documentContext.title}"${langInfo}
+Type: ${documentContext.contentType}
+
+=== DOCUMENT CONTENT ===
+${documentContext.contentSummary}
+=== END DOCUMENT ===`;
+
+      // Old intentContext system removed - using new agentic editor instead
+
+      messages.push({
+        role: 'user',
+        content: documentContextMessage
+      });
+
+      console.log(`[Pipeline] 📄 Document context injected before user message (${documentContext.contentSummary.length} chars)`);
+    }
+
+    // NOW add the current user message as the FINAL message
+    messages.push({
+      role: 'user',
+      content: userMessage
+    });
+
+    console.log(`[Pipeline] 📝 Message order: System → History (${history.length} msgs) → ${memories.length > 0 ? 'Memories → ' : ''}${documentContext ? 'Doc Context → ' : ''}Current User Msg`);
+
+    // Calculate token usage
     const totalTokens = this.budgeter.estimateTokens(JSON.stringify(messages));
     const conversationMessageCount = messages.length - 1; // Subtract system message
     
-    // Extract message IDs that are in the context window
-    const messageIdsInContext = recentMessages.map(msg => msg.id);
+    // Extract message IDs that are in the context window (excluding the current one we manually added)
+    const messageIdsInContext = historyWithoutCurrent.map(msg => msg.id);
     
     // Log with rolling window information
     console.log(

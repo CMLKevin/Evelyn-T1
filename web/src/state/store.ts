@@ -12,7 +12,7 @@ interface Message {
 interface Activity {
   id: number;
   tool: string;
-  status: string;
+  status: 'running' | 'done' | 'error' | string;
   messageId?: number;
   summary?: string;
   inputSummary?: string;
@@ -31,6 +31,27 @@ interface Activity {
     memoryGuidance?: any;
     moodImpact?: any;
     memoryCount?: number;
+    // Agentic code editor metadata
+    changes?: number;
+    iterations?: number;
+    goalAchieved?: boolean;
+    currentIteration?: number;
+    goal?: string;
+    agenticProgress?: {
+      iterations: Array<{
+        step: number;
+        think: string;
+        toolCall?: {
+          tool: string;
+          params: Record<string, any>;
+        };
+        toolResult?: any;
+        goalStatus: 'in_progress' | 'achieved' | 'blocked';
+      }>;
+      currentStep: number;
+      totalSteps: number;
+      goal: string;
+    };
   };
   createdAt?: string;
   finishedAt?: string;

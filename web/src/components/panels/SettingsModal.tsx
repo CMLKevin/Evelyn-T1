@@ -149,7 +149,7 @@ export default function SettingsModal({ onClose }: SettingsModalProps) {
               <span className="text-sm font-semibold">Include Codebase Context in Chat</span>
             </label>
             <p className="text-xs text-discord-text-muted mt-1 ml-6">
-              When enabled, Evelyn will have access to files from the currently open Code Canvas in the conversation context (increases token usage)
+              When enabled, Evelyn will have access to the document content when chatting in the Collaborate panel (increases token usage)
             </p>
           </div>
 

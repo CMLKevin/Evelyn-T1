@@ -144,6 +144,7 @@ class WSClient {
     });
 
     this.socket.on('subroutine:status', (data: any) => {
+      console.log('[WS] subroutine:status received:', data);
       useStore.getState().updateActivity(data);
     });
 
