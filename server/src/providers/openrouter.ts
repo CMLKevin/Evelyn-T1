@@ -237,7 +237,7 @@ class OpenRouterClient {
         model: selectedModel,
         messages,
         stream: true,
-        temperature: 0.8,
+        temperature: 0.75,
         max_tokens: 8192, // Doubled from 4096 for longer responses
       };
 

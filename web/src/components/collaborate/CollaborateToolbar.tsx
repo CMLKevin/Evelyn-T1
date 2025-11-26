@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useStore } from '../../state/store';
 import { 
   FileText, 
@@ -7,21 +7,22 @@ import {
   Download, 
   History, 
   Plus,
-  ChevronDown,
-  Clock,
-  Check
+  ChevronDown
 } from 'lucide-react';
 import { Badge } from '../ui';
 import ShortcutMenu from './ShortcutMenu';
 import NewDocumentModal from './NewDocumentModal';
 import ExportModal from './ExportModal';
+import { SaveStatusDot } from './SaveStatusIndicator';
+import ConflictModal from './ConflictModal';
+import { useCollaborateAutoSave, ConflictInfo } from '../../lib/collaborateAutoSave';
 
 export default function CollaborateToolbar() {
   const { 
     collaborateState,
-    updateCollaborateDocumentContent,
     saveCollaborateVersion,
-    setCollaborateActivePanel
+    setCollaborateActivePanel,
+    updateDocumentContent
   } = useStore();
 
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -29,8 +30,79 @@ export default function CollaborateToolbar() {
   const [showExport, setShowExport] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [titleValue, setTitleValue] = useState('');
+  const [showConflict, setShowConflict] = useState(false);
 
-  const { activeDocument, isSaving, lastSaved } = collaborateState;
+  const { activeDocument, currentContent, versionHistory } = collaborateState;
+  
+  // Get current version number
+  const currentVersion = versionHistory.length > 0 ? versionHistory[0].version : null;
+  
+  // Auto-save hook with conflict detection
+  const autoSaveHandler = useCallback(async (content: string, version?: number) => {
+    if (!activeDocument) return { success: false };
+    
+    try {
+      const response = await fetch(`http://localhost:3001/api/collaborate/${activeDocument.id}/save-version`, {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-Expected-Version': version?.toString() || ''
+        },
+        body: JSON.stringify({ 
+          content,
+          description: 'Auto-save',
+          createdBy: 'user'
+        })
+      });
+      
+      if (response.status === 409) {
+        // Conflict detected
+        const conflictData = await response.json();
+        return { 
+          success: false, 
+          conflict: true, 
+          serverContent: conflictData.serverContent,
+          version: conflictData.serverVersion
+        };
+      }
+      
+      if (response.ok) {
+        const result = await response.json();
+        return { success: true, version: result.version };
+      }
+      
+      return { success: false };
+    } catch (error) {
+      console.error('Auto-save error:', error);
+      return { success: false };
+    }
+  }, [activeDocument]);
+  
+  const handleConflict = useCallback((conflict: ConflictInfo) => {
+    setShowConflict(true);
+  }, []);
+  
+  const autoSave = useCollaborateAutoSave(
+    currentContent,
+    activeDocument?.id ?? null,
+    currentVersion,
+    {
+      delay: 2000,
+      maxDelay: 10000,
+      onSave: autoSaveHandler,
+      onConflict: handleConflict,
+      onError: (error) => console.error('Auto-save error:', error)
+    }
+  );
+  
+  const handleResolveConflict = async (choice: 'local' | 'server' | 'merge', mergedContent?: string) => {
+    const resolvedContent = await autoSave.resolveConflict(choice, mergedContent);
+    if (resolvedContent && choice !== 'local') {
+      // Update editor with resolved content
+      updateDocumentContent(resolvedContent);
+    }
+    setShowConflict(false);
+  };
 
   const handleSaveVersion = async () => {
     if (!activeDocument) return;
@@ -69,24 +141,39 @@ export default function CollaborateToolbar() {
   };
 
   const getSaveStatus = () => {
-    if (isSaving) {
-      return (
-        <span className="flex items-center gap-1.5 text-orange text-sm font-mono">
-          <Clock className="w-3.5 h-3.5 animate-spin" />
-          Saving...
+    const statusText = {
+      saved: 'Saved',
+      saving: 'Saving...',
+      unsaved: 'Unsaved',
+      conflict: 'Conflict!',
+      offline: 'Offline',
+      error: 'Error',
+      paused: 'Paused'
+    };
+    
+    const statusColor = {
+      saved: 'text-emerald-400',
+      saving: 'text-cyan-400',
+      unsaved: 'text-orange',
+      conflict: 'text-red-400',
+      offline: 'text-terminal-500',
+      error: 'text-red-400',
+      paused: 'text-purple-400'
+    };
+    
+    return (
+      <div className="flex items-center gap-2">
+        <SaveStatusDot status={autoSave.status} />
+        <span className={`text-sm font-mono ${statusColor[autoSave.status]}`}>
+          {statusText[autoSave.status]}
+          {autoSave.lastSaved && autoSave.status === 'saved' && (
+            <span className="text-terminal-500 ml-2">
+              at {new Date(autoSave.lastSaved).toLocaleTimeString()}
+            </span>
+          )}
         </span>
-      );
-    }
-    if (lastSaved) {
-      const time = new Date(lastSaved).toLocaleTimeString();
-      return (
-        <span className="flex items-center gap-1.5 text-green-500 text-sm font-mono">
-          <Check className="w-3.5 h-3.5" />
-          Saved at {time}
-        </span>
-      );
-    }
-    return null;
+      </div>
+    );
   };
 
   return (
@@ -150,6 +237,21 @@ export default function CollaborateToolbar() {
 
         {/* Right section */}
         <div className="flex items-center gap-2">
+          {/* Command Palette Button */}
+          <button
+            onClick={() => {
+              const { setCommandPaletteOpen } = useStore.getState();
+              setCommandPaletteOpen(true);
+            }}
+            className="px-3 py-1.5 bg-terminal-900 hover:bg-terminal-800 border-2 border-white/20 hover:border-white/30 
+                     text-terminal-300 hover:text-white text-sm font-mono transition-colors duration-150 
+                     flex items-center gap-2"
+            title="Command Palette (⌘K)"
+          >
+            <span>Commands</span>
+            <kbd className="px-1.5 py-0.5 bg-terminal-black border border-white/20 text-[10px] text-terminal-500">⌘K</kbd>
+          </button>
+
           {/* Shortcuts Menu */}
           {activeDocument && (
             <div className="relative">
@@ -171,7 +273,7 @@ export default function CollaborateToolbar() {
             <button
               onClick={() => setCollaborateActivePanel('versions')}
               className="p-2 hover:bg-terminal-800 border border-white/20 hover:border-white/30 transition-colors group"
-              title="Version History"
+              title="Version History (⌘H)"
             >
               <History className="w-4 h-4 text-zinc-400 group-hover:text-white transition-colors" />
             </button>
@@ -181,9 +283,9 @@ export default function CollaborateToolbar() {
           {activeDocument && (
             <button
               onClick={handleSaveVersion}
-              disabled={isSaving}
+              disabled={autoSave.status === 'saving'}
               className="p-2 hover:bg-terminal-800 border border-white/20 hover:border-white/30 transition-colors disabled:opacity-50 group"
-              title="Save Version (Ctrl+S)"
+              title="Save Version (⌘S)"
             >
               <Save className="w-4 h-4 text-zinc-400 group-hover:text-white transition-colors" />
             </button>
@@ -194,7 +296,7 @@ export default function CollaborateToolbar() {
             <button
               onClick={() => setShowExport(true)}
               className="p-2 hover:bg-terminal-800 border border-white/20 hover:border-white/30 transition-colors group"
-              title="Export Document"
+              title="Export Document (⌘E)"
             >
               <Download className="w-4 h-4 text-zinc-400 group-hover:text-white transition-colors" />
             </button>
@@ -208,6 +310,13 @@ export default function CollaborateToolbar() {
         <ExportModal 
           document={activeDocument} 
           onClose={() => setShowExport(false)} 
+        />
+      )}
+      {showConflict && autoSave.conflict && (
+        <ConflictModal
+          conflict={autoSave.conflict}
+          onResolve={handleResolveConflict}
+          onCancel={() => setShowConflict(false)}
         />
       )}
     </>

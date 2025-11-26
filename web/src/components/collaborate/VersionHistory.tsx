@@ -1,8 +1,9 @@
 import { useStore } from '../../state/store';
-import { Clock, RotateCcw, GitCompare, User, Bot } from 'lucide-react';
+import { Clock, RotateCcw, GitCompare, User, Bot, CheckSquare, Square } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { formatDistanceToNow } from 'date-fns';
 import DiffViewer from './DiffViewer';
+import ComparisonView from './ComparisonView';
 
 export default function VersionHistory() {
   const { 
@@ -13,8 +14,11 @@ export default function VersionHistory() {
 
   const [selectedVersionId, setSelectedVersionId] = useState<number | null>(null);
   const [showDiff, setShowDiff] = useState(false);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareVersions, setCompareVersions] = useState<number[]>([]);
+  const [showComparison, setShowComparison] = useState(false);
 
-  const { activeDocument, versionHistory } = collaborateState;
+  const { activeDocument, versionHistory, currentContent } = collaborateState;
 
   useEffect(() => {
     if (activeDocument) {
@@ -31,6 +35,60 @@ export default function VersionHistory() {
   const handleViewDiff = (versionId: number) => {
     setSelectedVersionId(versionId);
     setShowDiff(true);
+  };
+
+  // Toggle version selection for comparison
+  const toggleVersionSelection = (versionId: number) => {
+    setCompareVersions(prev => {
+      if (prev.includes(versionId)) {
+        return prev.filter(id => id !== versionId);
+      }
+      if (prev.length >= 2) {
+        return [prev[1], versionId]; // Keep last selected, add new
+      }
+      return [...prev, versionId];
+    });
+  };
+
+  // Compare selected versions
+  const handleCompareSelected = () => {
+    if (compareVersions.length === 2) {
+      setShowComparison(true);
+    }
+  };
+
+  // Compare with current content
+  const handleCompareWithCurrent = (versionId: number) => {
+    const version = versionHistory.find(v => v.id === versionId);
+    if (version) {
+      setCompareVersions([versionId]);
+      setShowComparison(true);
+    }
+  };
+
+  // Get content for comparison
+  const getComparisonContent = () => {
+    if (compareVersions.length === 1) {
+      // Compare version with current content
+      const version = versionHistory.find(v => v.id === compareVersions[0]);
+      return {
+        contentA: version?.content || '',
+        contentB: currentContent,
+        titleA: `Version ${version?.version}`,
+        titleB: 'Current'
+      };
+    } else if (compareVersions.length === 2) {
+      // Compare two versions
+      const versionA = versionHistory.find(v => v.id === compareVersions[0]);
+      const versionB = versionHistory.find(v => v.id === compareVersions[1]);
+      return {
+        contentA: versionA?.content || '',
+        contentB: versionB?.content || '',
+        titleA: `Version ${versionA?.version}`,
+        titleB: `Version ${versionB?.version}`
+      };
+    }
+    return null;
   };
 
   const getAuthorIcon = (author: string) => {
@@ -83,6 +141,28 @@ export default function VersionHistory() {
     );
   }
 
+  // Show ComparisonView
+  if (showComparison) {
+    const comparisonData = getComparisonContent();
+    if (comparisonData) {
+      return (
+        <ComparisonView
+          isOpen={true}
+          onClose={() => {
+            setShowComparison(false);
+            setCompareVersions([]);
+            setCompareMode(false);
+          }}
+          contentA={comparisonData.contentA}
+          contentB={comparisonData.contentB}
+          titleA={comparisonData.titleA}
+          titleB={comparisonData.titleB}
+          contentType={activeDocument?.contentType}
+        />
+      );
+    }
+  }
+
   return (
     <div className="divide-y divide-terminal-border">
       {versionHistory.map((version, index) => {
@@ -113,6 +193,36 @@ export default function VersionHistory() {
               </div>
 
               <div className="flex items-center gap-1">
+                {/* Compare mode checkbox */}
+                {compareMode && (
+                  <button
+                    onClick={() => toggleVersionSelection(version.id)}
+                    className={`p-1.5 rounded transition-colors ${
+                      compareVersions.includes(version.id)
+                        ? 'bg-cyan-500/20 text-cyan-400'
+                        : 'hover:bg-terminal-border text-terminal-500'
+                    }`}
+                    title={compareVersions.includes(version.id) ? 'Deselect' : 'Select for comparison'}
+                  >
+                    {compareVersions.includes(version.id) ? (
+                      <CheckSquare className="w-3.5 h-3.5" />
+                    ) : (
+                      <Square className="w-3.5 h-3.5" />
+                    )}
+                  </button>
+                )}
+                
+                {/* Compare with current */}
+                {!compareMode && !isLatest && (
+                  <button
+                    onClick={() => handleCompareWithCurrent(version.id)}
+                    className="p-1.5 hover:bg-terminal-border rounded transition-colors"
+                    title="Compare with current"
+                  >
+                    <GitCompare className="w-3.5 h-3.5 text-cyan-400" />
+                  </button>
+                )}
+                
                 {!isLatest && (
                   <button
                     onClick={() => handleRevert(version.id)}
@@ -120,15 +230,6 @@ export default function VersionHistory() {
                     title="Revert to this version"
                   >
                     <RotateCcw className="w-3.5 h-3.5 text-terminal-accent" />
-                  </button>
-                )}
-                {!isLatest && (
-                  <button
-                    onClick={() => handleViewDiff(version.id)}
-                    className="p-1.5 hover:bg-terminal-border rounded transition-colors"
-                    title="View changes"
-                  >
-                    <GitCompare className="w-3.5 h-3.5 text-terminal-secondary" />
                   </button>
                 )}
               </div>

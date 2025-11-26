@@ -1,8 +1,10 @@
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { useStore } from '../../state/store';
 import Editor from '@monaco-editor/react';
 import type * as Monaco from 'monaco-editor';
 import InlineSuggestion from './InlineSuggestion';
+import EvelynCursor, { useEvelynPresence, EvelynPresence } from './EvelynCursor';
+import { wsClient } from '../../lib/ws';
 
 export default function CollaborateEditor() {
   const { 
@@ -12,6 +14,7 @@ export default function CollaborateEditor() {
   } = useStore();
 
   const editorRef = useRef<Monaco.editor.IStandaloneCodeEditor | null>(null);
+  const { presence, setPresence, clearPresence } = useEvelynPresence();
   const { 
     activeDocument, 
     currentContent, 
@@ -19,6 +22,63 @@ export default function CollaborateEditor() {
     showInlineSuggestions,
     currentSuggestions 
   } = collaborateState;
+
+  // Listen for Evelyn's cursor presence events
+  useEffect(() => {
+    const socket = wsClient.socket;
+    if (!socket || !activeDocument) return;
+
+    const handleCursorMove = (data: { documentId: number; line: number; column: number; action: EvelynPresence['action'] }) => {
+      if (data.documentId === activeDocument.id) {
+        setPresence({
+          documentId: data.documentId,
+          action: data.action,
+          cursor: { line: data.line, column: data.column },
+          timestamp: new Date().toISOString(),
+        });
+      }
+    };
+
+    const handleSelectionChange = (data: { documentId: number; startLine: number; startColumn: number; endLine: number; endColumn: number; action: EvelynPresence['action'] }) => {
+      if (data.documentId === activeDocument.id) {
+        setPresence({
+          documentId: data.documentId,
+          action: data.action,
+          cursor: { line: data.startLine, column: data.startColumn },
+          selection: {
+            startLine: data.startLine,
+            startColumn: data.startColumn,
+            endLine: data.endLine,
+            endColumn: data.endColumn,
+          },
+          timestamp: new Date().toISOString(),
+        });
+      }
+    };
+
+    const handleEvelynPresence = (data: EvelynPresence) => {
+      if (data.documentId === activeDocument.id) {
+        setPresence(data);
+      }
+    };
+
+    const handleEditComplete = () => {
+      // Clear presence when editing is done
+      setTimeout(() => clearPresence(), 2000);
+    };
+
+    socket.on('collaborate:cursor_move', handleCursorMove);
+    socket.on('collaborate:selection_change', handleSelectionChange);
+    socket.on('collaborate:evelyn_presence', handleEvelynPresence);
+    socket.on('collaborate:edit_complete', handleEditComplete);
+
+    return () => {
+      socket.off('collaborate:cursor_move', handleCursorMove);
+      socket.off('collaborate:selection_change', handleSelectionChange);
+      socket.off('collaborate:evelyn_presence', handleEvelynPresence);
+      socket.off('collaborate:edit_complete', handleEditComplete);
+    };
+  }, [activeDocument?.id, setPresence, clearPresence]);
 
   // Monaco theme configuration
   const monacoTheme = {
@@ -149,6 +209,9 @@ export default function CollaborateEditor() {
           {editMode === 'evelyn' ? 'Evelyn is editing' : 'Collaborative mode'}
         </div>
       )}
+
+      {/* Evelyn's Cursor */}
+      <EvelynCursor editor={editorRef.current} presence={presence} />
 
       {/* Monaco Editor */}
       <Editor

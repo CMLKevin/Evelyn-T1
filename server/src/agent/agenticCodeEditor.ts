@@ -2,6 +2,26 @@ import { Socket } from 'socket.io';
 import { openRouterClient } from '../providers/openrouter.js';
 import { db } from '../db/client.js';
 import { personalityEngine } from './personality.js';
+import { createCursorPresence, findTextRange, CursorPresenceEmitter } from './cursorPresence.js';
+import { MODELS, COLLABORATE_CONFIG } from '../constants/index.js';
+import {
+  buildEnhancedSystemPrompt,
+  buildIterationPrompt,
+  parseStructuredThought,
+  decomposeGoal,
+  StructuredThought,
+  EditPlan
+} from './agenticPrompts.js';
+import {
+  ToolParser,
+  EditVerifier,
+  CheckpointManager,
+  createToolParser,
+  createEditVerifier,
+  createCheckpointManager,
+  ParseResult,
+  VerifyResult
+} from './agenticToolParser.js';
 
 /**
  * Agentic Code Editor
@@ -55,9 +75,11 @@ interface EditChange {
 interface AgenticIteration {
   step: number;
   think: string;
+  structuredThought?: StructuredThought;
   toolCall?: ToolCall;
   toolResult?: any;
   goalStatus: 'in_progress' | 'achieved' | 'blocked';
+  subGoalId?: string;
 }
 
 interface FullEditingContext {
@@ -98,7 +120,7 @@ export async function detectEditIntentWithFullContext(
   console.log(`[AgenticEditor] Document: ${context.documentTitle} (${context.documentType}, ${context.documentContent.length} chars)`);
   
   // Truncate document content for intent detection if too large
-  const MAX_INTENT_CONTENT = 4000; // Smaller for intent detection
+  const MAX_INTENT_CONTENT = COLLABORATE_CONFIG.AGENTIC_EDIT.INTENT_TRUNCATION_LIMIT;
   let documentContentForIntent = context.documentContent;
   if (context.documentContent.length > MAX_INTENT_CONTENT) {
     const headLength = Math.floor(MAX_INTENT_CONTENT * 0.6);
@@ -169,7 +191,7 @@ Return ONLY valid JSON (no markdown, no extra text):
     const response = await Promise.race([
       openRouterClient.complete(
         [{ role: 'user', content: prompt }],
-        'moonshotai/kimi-k2-0905',
+        MODELS.AGENT,
         { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' },
         0.4 // Lower temperature for deterministic code analysis
       ),
@@ -351,191 +373,42 @@ async function executeAgenticEditingLoop(
   const iterations: AgenticIteration[] = [];
   let currentContent = context.documentContent;
   const changes: EditChange[] = [];
-  const MAX_ITERATIONS = 10;
-  const ITERATION_TIMEOUT_MS = 90000; // 90 seconds per iteration
-  const TOTAL_TIMEOUT_MS = 300000; // 5 minutes total
+  const MAX_ITERATIONS = COLLABORATE_CONFIG.AGENTIC_EDIT.MAX_ITERATIONS;
+  const ITERATION_TIMEOUT_MS = COLLABORATE_CONFIG.AGENTIC_EDIT.ITERATION_TIMEOUT_MS;
+  const TOTAL_TIMEOUT_MS = COLLABORATE_CONFIG.AGENTIC_EDIT.TOTAL_TIMEOUT_MS;
   
   const startTime = Date.now();
 
-  // Build the agentic prompt with Evelyn's personality (Requirement 2)
-  const agenticSystemPrompt = `${context.evelynSystemPrompt}
+  // Build edit plan with goal decomposition (Phase 1 improvement)
+  const editPlan = decomposeGoal(
+    context.userMessage,
+    context.documentContent,
+    context.documentType
+  );
+  console.log(`[AgenticEditor] 📋 Edit plan: ${editPlan.subGoals.length} sub-goals`);
 
-╔═══════════════════════════════════════════════════════════════╗
-║           🎯 AGENTIC CODE EDITING MODE ACTIVATED              ║
-╚═══════════════════════════════════════════════════════════════╝
+  // Initialize Phase 2 components
+  const toolParser = createToolParser();
+  const editVerifier = createEditVerifier();
+  const checkpointManager = createCheckpointManager(10);
+  
+  // Create initial checkpoint
+  checkpointManager.create(currentContent, 0, 'Initial document state');
+  console.log(`[AgenticEditor] 🔒 Checkpoint system initialized`);
 
-You are Evelyn, now in FOCUSED EDITING MODE. Work step-by-step to accomplish the user's request.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📋 YOUR EDITING MISSION:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-🎯 GOAL: ${goal.goal}
-
-📝 APPROACH: ${goal.approach}
-
-✅ EXPECTED CHANGES:
-${goal.expectedChanges.map((c, i) => `   ${i + 1}. ${c}`).join('\n')}
-
-💡 COMPLEXITY: ${goal.estimatedComplexity}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🛠️  AVAILABLE TOOLS (use XML syntax):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-1️⃣ READ THE FILE:
-<read_file><path>${context.documentTitle}</path></read_file>
-→ Use this to see the current document state
-→ Good for: checking if previous changes worked, reading before editing
-
-2️⃣ SEARCH FOR PATTERNS:
-<search_files><pattern>your search term or regex</pattern></search_files>
-→ Find specific text, functions, variables, or patterns
-→ Use this FIRST if you need to locate something before editing
-→ Example: <search_files><pattern>function myFunc</pattern></search_files>
-
-3️⃣ REPLACE SPECIFIC SECTIONS (⭐ PREFERRED FOR MOST EDITS):
-<replace_in_file><path>${context.documentTitle}</path><content>
-<<<<<<< SEARCH
-[EXACT text to find - must match CHARACTER-BY-CHARACTER including spaces/tabs]
-======= REPLACE
-[New text to put in its place]
->>>>>>> REPLACE
-</content></replace_in_file>
-
-⚠️ CRITICAL RULES FOR REPLACE:
-• The SEARCH block must match the document EXACTLY (copy-paste from the document!)
-• Include enough surrounding context to make the match UNIQUE
-• You can have multiple SEARCH/REPLACE blocks in ONE tool call
-• Each SEARCH/REPLACE pair must be separate
-• ALWAYS verify your SEARCH text matches what's actually in the file
-
-✅ GOOD EXAMPLE:
-<replace_in_file><path>game.py</path><content>
-<<<<<<< SEARCH
-def move_player(x, y):
-    # TODO: add bounds checking
-    player.x = x
-======= REPLACE
-def move_player(x, y):
-    # Added bounds checking
-    if 0 <= x < SCREEN_WIDTH and 0 <= y < SCREEN_HEIGHT:
-        player.x = x
->>>>>>> REPLACE
-</content></replace_in_file>
-
-4️⃣ COMPLETE REWRITE (use ONLY if replacing >70% of the file):
-<write_to_file><path>${context.documentTitle}</path><content>
-[ENTIRE new file content here]
-</content></write_to_file>
-→ Use sparingly! Usually replace_in_file is better
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-⚙️  YOUR WORKFLOW (Follow this EXACTLY):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-**STEP-BY-STEP APPROACH:**
-
-1. 🤔 THINK: Explain your next step
-   • What are you about to do?
-   • Why is this the right next action?
-   • What do you expect to happen?
-   
-2. 🔧 ACT: Use ONE tool
-   • Make ONE focused change at a time
-   • Don't try to do everything in one go
-   • If you need to search first, do that
-   • If you need to read the file, do that
-   • Then make your edit
-   
-3. 🔁 REPEAT: Continue until goal achieved
-   • After each tool, you'll see the result
-   • The updated document will be shown to you
-   • Then you THINK about the next step
-   • Then you ACT again
-   • Keep going until you've completed ALL expected changes
-   
-4. ✅ FINISH: When done, say "GOAL ACHIEVED"
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-💡 PRO TIPS:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-✨ WORK INCREMENTALLY:
-• Don't try to fix everything at once
-• Make one logical change per iteration
-• Verify each change before moving to the next
-• If you have 3 things to change, do them in 3 separate iterations
-
-✨ USE YOUR PERSONALITY:
-• Your mood: ${context.evelynMood}
-• If you add comments, use YOUR voice (not boring robot comments)
-• Be authentic to who you are while coding
-• You can be creative with variable names, comments, etc.
-
-✨ WHEN TO USE EACH TOOL:
-• **search_files**: When you need to FIND something first
-• **read_file**: When you want to see the current state
-• **replace_in_file**: 95% of edits (preferred!)
-• **write_to_file**: Only for complete rewrites
-
-✨ COMMON MISTAKES TO AVOID:
-• ❌ Trying to do too much in one iteration
-• ❌ SEARCH blocks that don't match exactly
-• ❌ Forgetting to include enough context in SEARCH
-• ❌ Using write_to_file when replace_in_file would work
-• ❌ Making assumptions without reading the file first
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📤 HOW TO RESPOND:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Each response should have TWO parts:
-
-1. Your THINKING (plain text):
-   • "Okay, I need to [what you're doing]"
-   • "First I should [why you're doing it this way]"
-   • "This will [expected outcome]"
-   
-2. ONE TOOL CALL (XML syntax as shown above)
-
-**EXAMPLE RESPONSE:**
-
-Alright, I need to add bounds checking to the move_player function. Let me first search for it to see exactly how it's structured.
-
-<search_files><pattern>def move_player</pattern></search_files>
-
-**NEXT ITERATION EXAMPLE:**
-
-Perfect, found it at line 45. Now I'll add the bounds checking logic. I'll use replace_in_file to modify just that function.
-
-<replace_in_file><path>game.py</path><content>
-<<<<<<< SEARCH
-def move_player(x, y):
-    player.x = x
-    player.y = y
-======= REPLACE
-def move_player(x, y):
-    # evelyn's bounds checking (keeping players in bounds like i keep my life together lol)
-    if 0 <= x < SCREEN_WIDTH and 0 <= y < SCREEN_HEIGHT:
-        player.x = x
-        player.y = y
->>>>>>> REPLACE
-</content></replace_in_file>
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🎯 REMEMBER:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-• Work STEP BY STEP (one change at a time)
-• The updated document is given to you after EACH tool call
-• Think → Act → See Result → Think → Act → See Result...
-• When ALL expected changes are complete, say "GOAL ACHIEVED"
-• Be yourself while coding (you're Evelyn, not a generic AI!)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-The current document state will be provided in each iteration. Let's do this! 🚀`;
+  // Build the enhanced agentic prompt (Phase 1 improvement)
+  const agenticSystemPrompt = buildEnhancedSystemPrompt({
+    evelynSystemPrompt: context.evelynSystemPrompt,
+    evelynMood: context.evelynMood,
+    documentTitle: context.documentTitle,
+    documentContent: context.documentContent,
+    language: context.language || null,
+    contentType: context.documentType,
+    userMessage: context.userMessage,
+    goal
+  });
+  
+  console.log(`[AgenticEditor] 📝 Using enhanced system prompt (${agenticSystemPrompt.length} chars)`);
 
   const conversationHistory: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
     { role: 'system', content: agenticSystemPrompt }
@@ -593,15 +466,22 @@ The current document state will be provided in each iteration. Let's do this! �
       socket.emit('subroutine:status', progressPayload);
     }
 
-    // ALWAYS provide the FULL current content (no truncation)
-    // Since we're editing only ONE file, Evelyn needs to see the complete updated state
-    const contentToShow = currentContent;
-    
-    const iterationPrompt = iteration === 0
-      ? `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🚀 ITERATION 1: START\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\nBegin working on your goal. Here's the current document:\n\n📄 FILE: ${context.documentTitle}\n📏 SIZE: ${currentContent.length} chars\n\n\`\`\`\n${contentToShow}\n\`\`\`\n\n💭 Think about your FIRST step, then use ONE tool to start.`
-      : `━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n🔄 ITERATION ${iteration + 1}: CONTINUE\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n✅ Changes applied so far: ${changes.length}\n${changes.length > 0 ? '\n📝 Recent changes:\n' + changes.slice(-2).map((c, i) => `   ${changes.length - 1 + i}. ${c.description}`).join('\n') : ''}\n\n📄 UPDATED FILE: ${context.documentTitle}\n📏 SIZE: ${currentContent.length} chars\n\n\`\`\`\n${contentToShow}\n\`\`\`\n\n💭 What's your NEXT step? Think, then use ONE tool.\n\n🎯 Remember: Work step-by-step. If you've completed all expected changes, say "GOAL ACHIEVED".`;
+    // Build iteration prompt with enhanced format (Phase 1 improvement)
+    const iterationPrompt = buildIterationPrompt(
+      iteration,
+      currentContent,
+      context.documentTitle,
+      changes,
+      editPlan
+    );
 
     conversationHistory.push({ role: 'user', content: iterationPrompt });
+
+    // Emit thinking state before LLM call
+    if (socket) {
+      const cursorPresence = createCursorPresence(socket, context.documentId);
+      cursorPresence.emitThinking(`Iteration ${iteration + 1}: Planning next step...`);
+    }
 
     // Get Evelyn's next action (think + tool call) with iteration timeout
     console.log(`[AgenticEditor] 🤔 Waiting for LLM response (iteration ${iteration + 1})...`);
@@ -612,7 +492,7 @@ The current document state will be provided in each iteration. Let's do this! �
       response = await Promise.race([
         openRouterClient.complete(
           conversationHistory,
-          'moonshotai/kimi-k2-0905',
+          MODELS.AGENT,
           { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' },
           0.4 // Lower temperature for precise code editing
         ),
@@ -640,6 +520,15 @@ The current document state will be provided in each iteration. Let's do this! �
     // Parse thinking and tool call
     const thinkMatch = response.match(/^([\s\S]*?)(?=<[\w_]+>|$)/);
     const thinking = thinkMatch ? thinkMatch[1].trim() : '';
+    
+    // Parse structured thought (Phase 1 improvement)
+    const structuredThought = parseStructuredThought(response);
+    if (structuredThought) {
+      console.log(`[AgenticEditor] 🧠 Structured thought:`);
+      console.log(`  - Observation: ${structuredThought.observation.slice(0, 60)}...`);
+      console.log(`  - Plan: ${structuredThought.plan.slice(0, 60)}...`);
+      console.log(`  - Risk: ${structuredThought.risk}, Confidence: ${structuredThought.confidence}`);
+    }
 
     console.log(`[AgenticEditor] 💭 Think: ${thinking.slice(0, 100)}...`);
 
@@ -659,16 +548,21 @@ The current document state will be provided in each iteration. Let's do this! �
       iterations.push({
         step: iteration + 1,
         think: thinking,
+        structuredThought: structuredThought || undefined,
         goalStatus: 'achieved'
       });
       break;
     }
 
-    // Extract tool call
-    const toolCallMatch = response.match(/<(\w+)>([\s\S]*?)<\/\1>/);
+    // Parse tool call using robust parser (Phase 2 improvement)
+    const parseResult = toolParser.parse(response);
     
-    if (!toolCallMatch) {
-      console.log('[AgenticEditor] ⚠️ No tool call found in response');
+    if (!parseResult.success || !parseResult.toolCall) {
+      console.log('[AgenticEditor] ⚠️ Tool parsing failed');
+      console.log('[AgenticEditor] Error:', parseResult.error);
+      if (parseResult.suggestions) {
+        console.log('[AgenticEditor] Suggestions:', parseResult.suggestions);
+      }
       console.log('[AgenticEditor] Response:', response.slice(0, 200));
       
       // If we've made changes and there's no tool call, assume goal is achieved
@@ -677,6 +571,7 @@ The current document state will be provided in each iteration. Let's do this! �
         iterations.push({
           step: iteration + 1,
           think: thinking,
+          structuredThought: structuredThought || undefined,
           goalStatus: 'achieved'
         });
         break;
@@ -685,35 +580,75 @@ The current document state will be provided in each iteration. Let's do this! �
         iterations.push({
           step: iteration + 1,
           think: thinking,
+          structuredThought: structuredThought || undefined,
           goalStatus: 'blocked'
         });
         break;
       }
     }
 
-    const toolName = toolCallMatch[1] as keyof typeof tools;
-    const toolContent = toolCallMatch[2];
-
-    // Parse tool parameters
-    const params: Record<string, any> = {};
-    const paramMatches = toolContent.matchAll(/<(\w+)>([\s\S]*?)<\/\1>/g);
+    const { tool: toolName, params, corrections, confidence } = parseResult.toolCall;
     
-    for (const paramMatch of paramMatches) {
-      params[paramMatch[1]] = paramMatch[2].trim();
+    // Log parse results
+    if (corrections.length > 0) {
+      console.log(`[AgenticEditor] 🔧 Tool parsed with corrections:`, corrections);
     }
-
-    console.log(`[AgenticEditor] 🔧 Tool: ${toolName} with params:`, Object.keys(params));
+    console.log(`[AgenticEditor] 🔧 Tool: ${toolName} (confidence: ${confidence.toFixed(2)}) with params:`, Object.keys(params));
     console.log(`[AgenticEditor] ⏳ Executing tool: ${toolName}...`);
 
-    // Execute tool
+    // Create cursor presence emitter if socket is available
+    let cursorPresence: CursorPresenceEmitter | null = null;
+    if (socket) {
+      cursorPresence = createCursorPresence(socket, context.documentId);
+    }
+
+    // Execute tool with cursor presence events
     let toolResult: any;
     try {
+      // Emit tool-specific cursor events
+      if (cursorPresence) {
+        if (toolName === 'read_file') {
+          cursorPresence.emitReading(1, 1);
+        } else if (toolName === 'search_files' && params.pattern) {
+          cursorPresence.emitSearching(params.pattern);
+        } else if (toolName === 'replace_in_file' && params.content) {
+          // Find the text being searched for and highlight it
+          const searchMatch = params.content.match(/<<<+\s*SEARCH\s*\n([\s\S]*?)\n\s*=+/);
+          if (searchMatch) {
+            const searchText = searchMatch[1].trim();
+            const range = findTextRange(currentContent, searchText);
+            if (range) {
+              cursorPresence.emitSelecting(range);
+            }
+          }
+        } else if (toolName === 'write_to_file') {
+          cursorPresence.emitTyping(1, 1);
+        }
+      }
+
       if (toolName in tools) {
         toolResult = await tools[toolName](params as any, { ...context, documentContent: currentContent });
 
         // Update working content if tool modified it
         if (toolName === 'write_to_file' && params.content) {
+          const oldContent = currentContent;
           currentContent = params.content;
+          
+          // Verify edit (Phase 2 improvement)
+          const verifyResult = editVerifier.verify(
+            oldContent,
+            currentContent,
+            'Complete rewrite',
+            context.language || undefined
+          );
+          console.log(`[AgenticEditor] 🔍 Verification: ${verifyResult.diffSummary}, confidence: ${verifyResult.confidence.toFixed(2)}`);
+          if (verifyResult.warnings.length > 0) {
+            console.log(`[AgenticEditor] ⚠️ Warnings:`, verifyResult.warnings);
+          }
+          
+          // Create checkpoint (Phase 2 improvement)
+          checkpointManager.create(currentContent, iteration + 1, 'After write_to_file');
+          
           changes.push({
             type: 'write',
             description: 'Rewrote entire document',
@@ -723,6 +658,25 @@ The current document state will be provided in each iteration. Let's do this! �
           // CRITICAL FIX: Use the modified content from the tool, don't re-parse
           const oldContent = currentContent;
           currentContent = toolResult.modifiedContent;
+          
+          // Verify edit (Phase 2 improvement)
+          const verifyResult = editVerifier.verify(
+            oldContent,
+            currentContent,
+            `Replace: ${toolResult.replacements} replacement(s)`,
+            context.language || undefined
+          );
+          console.log(`[AgenticEditor] 🔍 Verification: ${verifyResult.diffSummary}, confidence: ${verifyResult.confidence.toFixed(2)}`);
+          if (verifyResult.warnings.length > 0) {
+            console.log(`[AgenticEditor] ⚠️ Warnings:`, verifyResult.warnings);
+          }
+          if (!verifyResult.syntaxValid) {
+            console.log(`[AgenticEditor] ⚠️ Syntax validation failed - edit may have issues`);
+          }
+          
+          // Create checkpoint (Phase 2 improvement)
+          checkpointManager.create(currentContent, iteration + 1, `After replace_in_file (${toolResult.replacements} changes)`);
+          
           changes.push({
             type: 'replace',
             description: `Applied ${toolResult.replacements} replacement(s)`,
@@ -746,6 +700,7 @@ The current document state will be provided in each iteration. Let's do this! �
     iterations.push({
       step: iteration + 1,
       think: thinking,
+      structuredThought: structuredThought || undefined,
       toolCall: { tool: toolName, params },
       toolResult,
       goalStatus: 'in_progress'
@@ -786,6 +741,10 @@ The current document state will be provided in each iteration. Let's do this! �
   }
 
   const goalAchieved = iterations[iterations.length - 1]?.goalStatus === 'achieved';
+  
+  // Log checkpoint summary (Phase 2)
+  const checkpoints = checkpointManager.list();
+  console.log(`[AgenticEditor] 🔒 Created ${checkpoints.length} checkpoints during edit`);
 
   return {
     success: goalAchieved,
@@ -793,7 +752,7 @@ The current document state will be provided in each iteration. Let's do this! �
     changes,
     goalAchieved,
     iterations,
-    summary: `Completed in ${iterations.length} iterations. ${changes.length} changes made.`
+    summary: `Completed in ${iterations.length} iterations. ${changes.length} changes made. ${checkpoints.length} checkpoints created.`
   };
 }
 

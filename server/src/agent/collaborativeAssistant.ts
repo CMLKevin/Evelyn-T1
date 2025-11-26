@@ -1,10 +1,36 @@
 import { openRouterClient } from '../providers/openrouter.js';
 import { db } from '../db/client.js';
+import { MODELS, PROVIDERS, COLLABORATE_CONFIG } from '../constants/index.js';
 
 /**
  * Collaborative Assistant - AI functions for the Collaborate feature
  * This module provides AI-powered assistance for writing and coding tasks
  */
+
+// ========================================
+// Utility Functions
+// ========================================
+
+/**
+ * Safely extract JSON from LLM response with fallback
+ */
+function safeParseJSON<T>(response: string, fallback: T): T {
+  try {
+    // Try to find JSON array
+    const arrayMatch = response.match(/\[[\s\S]*\]/);
+    if (arrayMatch) {
+      return JSON.parse(arrayMatch[0]);
+    }
+    // Try to find JSON object
+    const objectMatch = response.match(/\{[\s\S]*\}/);
+    if (objectMatch) {
+      return JSON.parse(objectMatch[0]);
+    }
+  } catch (error) {
+    console.warn('[CollaborateAI] JSON parse warning:', error);
+  }
+  return fallback;
+}
 
 // ========================================
 // Types
@@ -41,7 +67,7 @@ Return a brief analysis.`;
 
   const analysis = await openRouterClient.complete(
     [{ role: 'user', content: prompt }],
-    'moonshotai/kimi-k2-0905',
+    MODELS.AGENT,
     { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
   );
 
@@ -100,7 +126,7 @@ Return JSON array of suggestions with format: [{ type, title, description, origi
 
   const response = await openRouterClient.complete(
     [{ role: 'user', content: prompt }],
-    'moonshotai/kimi-k2-0905',
+    MODELS.AGENT,
     { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
   );
 
@@ -131,7 +157,7 @@ export async function adjustLength(content: string, direction: 'shorter' | 'long
 
   const result = await openRouterClient.complete(
     [{ role: 'user', content: prompt }],
-    'moonshotai/kimi-k2-0905',
+    MODELS.AGENT,
     { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
   );
 
@@ -148,7 +174,7 @@ export async function adjustReadingLevel(
 
   const result = await openRouterClient.complete(
     [{ role: 'user', content: prompt }],
-    'moonshotai/kimi-k2-0905',
+    MODELS.AGENT,
     { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
   );
 
@@ -162,7 +188,7 @@ export async function addPolish(content: string): Promise<string> {
 
   const result = await openRouterClient.complete(
     [{ role: 'user', content: prompt }],
-    'moonshotai/kimi-k2-0905',
+    MODELS.AGENT,
     { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
   );
 
@@ -176,7 +202,7 @@ export async function addEmojis(content: string): Promise<string> {
 
   const result = await openRouterClient.complete(
     [{ role: 'user', content: prompt }],
-    'moonshotai/kimi-k2-0905',
+    MODELS.AGENT,
     { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
   );
 
@@ -206,7 +232,7 @@ Return JSON with: { suggestions: [{ line, type, description, suggestedFix }], ov
 
   const response = await openRouterClient.complete(
     [{ role: 'user', content: prompt }],
-    'moonshotai/kimi-k2-0905',
+    MODELS.AGENT,
     { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
   );
 
@@ -233,7 +259,7 @@ ${code}
 
   const result = await openRouterClient.complete(
     [{ role: 'user', content: prompt }],
-    'moonshotai/kimi-k2-0905',
+    MODELS.AGENT,
     { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
   );
 
@@ -253,7 +279,7 @@ ${code}
 
   const result = await openRouterClient.complete(
     [{ role: 'user', content: prompt }],
-    'moonshotai/kimi-k2-0905',
+    MODELS.AGENT,
     { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
   );
 
@@ -274,7 +300,7 @@ Return JSON with: { bugs: [{ line, issue, severity }], fixedCode: string }`;
 
   const response = await openRouterClient.complete(
     [{ role: 'user', content: prompt }],
-    'moonshotai/kimi-k2-0905',
+    MODELS.AGENT,
     { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
   );
 
@@ -307,7 +333,7 @@ Return only the ${toLanguage} code.`;
 
   const result = await openRouterClient.complete(
     [{ role: 'user', content: prompt }],
-    'moonshotai/kimi-k2-0905',
+    MODELS.AGENT,
     { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
   );
 
@@ -341,7 +367,7 @@ Return only the edited version of this section.`;
 
   const result = await openRouterClient.complete(
     [{ role: 'user', content: prompt }],
-    'moonshotai/kimi-k2-0905',
+    MODELS.AGENT,
     { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
   );
 
@@ -415,7 +441,7 @@ Respond with JSON only in this shape:
   try {
     const response = await openRouterClient.complete(
       [{ role: 'user', content: prompt }],
-      'moonshotai/kimi-k2-0905',
+      MODELS.AGENT,
       { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
     );
 
@@ -518,7 +544,7 @@ Set "action":"edit_document" ONLY when the user clearly wants you to change the 
 
     const response = await openRouterClient.complete(
       [{ role: 'user', content: prompt }],
-      'moonshotai/kimi-k2-0905',
+      MODELS.AGENT,
       { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
     );
 
@@ -622,7 +648,7 @@ ${content}`;
 
   const newContent = await openRouterClient.complete(
     [{ role: 'user', content: prompt }],
-    'moonshotai/kimi-k2-0905',
+    MODELS.AGENT,
     { order: ['baseten/fp4'], require_parameters: true, data_collection: 'deny' }
   );
 

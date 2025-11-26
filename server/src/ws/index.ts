@@ -13,8 +13,64 @@ import {
   applyAutonomousEdit,
   determineCollaborateIntent
 } from '../agent/collaborativeAssistant.js';
+import { COLLABORATE_CONFIG } from '../constants/index.js';
 
-const activeCollaborateTasks = new Set<number>();
+// ========================================
+// Task Tracking with Timeout Protection
+// ========================================
+
+interface ActiveTask {
+  documentId: number;
+  taskId: string;
+  startedAt: number;
+  socketId: string;
+}
+
+const activeCollaborateTasks = new Map<number, ActiveTask>();
+
+// Cleanup stale tasks periodically
+const TASK_TIMEOUT_MS = COLLABORATE_CONFIG.WS.TASK_TIMEOUT_MS;
+const CLEANUP_INTERVAL_MS = COLLABORATE_CONFIG.WS.CLEANUP_INTERVAL_MS;
+
+function cleanupStaleTasks(): void {
+  const now = Date.now();
+  for (const [documentId, task] of activeCollaborateTasks.entries()) {
+    if (now - task.startedAt > TASK_TIMEOUT_MS) {
+      console.warn(`[WS] Cleaning up stale task for document ${documentId} (started ${Math.round((now - task.startedAt) / 1000)}s ago)`);
+      activeCollaborateTasks.delete(documentId);
+    }
+  }
+}
+
+// Start cleanup interval
+setInterval(cleanupStaleTasks, CLEANUP_INTERVAL_MS);
+
+function isTaskActive(documentId: number): boolean {
+  const task = activeCollaborateTasks.get(documentId);
+  if (!task) return false;
+  
+  // Check if task has been running too long (stale)
+  if (Date.now() - task.startedAt > TASK_TIMEOUT_MS) {
+    console.warn(`[WS] Task for document ${documentId} exceeded timeout, marking as stale`);
+    activeCollaborateTasks.delete(documentId);
+    return false;
+  }
+  
+  return true;
+}
+
+function registerTask(documentId: number, taskId: string, socketId: string): void {
+  activeCollaborateTasks.set(documentId, {
+    documentId,
+    taskId,
+    startedAt: Date.now(),
+    socketId
+  });
+}
+
+function unregisterTask(documentId: number): void {
+  activeCollaborateTasks.delete(documentId);
+}
 
 async function runCollaborateAgentTask(
   io: Server,
@@ -30,7 +86,7 @@ async function runCollaborateAgentTask(
 ): Promise<void> {
   const taskId = uuidv4();
 
-  if (activeCollaborateTasks.has(data.documentId)) {
+  if (isTaskActive(data.documentId)) {
     const timestamp = new Date().toISOString();
     socket.emit('collaborate:task_status', {
       documentId: data.documentId,
@@ -50,7 +106,7 @@ async function runCollaborateAgentTask(
     return;
   }
 
-  activeCollaborateTasks.add(data.documentId);
+  registerTask(data.documentId, taskId, socket.id);
 
   const baseSteps = [
     { id: 'plan', label: 'Plan task', status: 'running' as const },
@@ -236,7 +292,7 @@ async function runCollaborateAgentTask(
       message: error instanceof Error ? error.message : 'Failed to run collaborate agent task'
     });
   } finally {
-    activeCollaborateTasks.delete(data.documentId);
+    unregisterTask(data.documentId);
   }
 }
 

@@ -1,15 +1,33 @@
-import { useState } from 'react';
-import { Code2, Brain, Wrench, CheckCircle2, XCircle, Loader2, ChevronDown, ChevronUp, FileEdit, Search } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Code2, Brain, Wrench, CheckCircle2, XCircle, Loader2, ChevronDown, ChevronUp, FileEdit, Search, MousePointer2, MapPin, Eye, Target, AlertTriangle, Sparkles, GitCompare } from 'lucide-react';
+import { wsClient } from '../../lib/ws';
+import { getPersonalityMessage, getToolMessage, getResultMessage, getCompletionMessage } from '../../lib/evelynPersonality';
+
+interface StructuredThought {
+  observation: string;
+  plan: string;
+  risk: 'low' | 'medium' | 'high';
+  toolChoice: string;
+  confidence: number;
+}
 
 interface AgenticIteration {
   step: number;
   think: string;
+  structuredThought?: StructuredThought;
   toolCall?: {
     tool: string;
     params: Record<string, any>;
   };
   toolResult?: any;
   goalStatus: 'in_progress' | 'achieved' | 'blocked';
+  subGoalId?: string;
+}
+
+interface CursorPresence {
+  action: 'idle' | 'thinking' | 'reading' | 'typing' | 'selecting' | 'searching';
+  cursor?: { line: number; column: number };
+  targetDescription?: string;
 }
 
 interface AgenticEditProgressProps {
@@ -32,16 +50,73 @@ interface AgenticEditProgressProps {
       };
     };
   };
+  onJumpToCursor?: (line: number) => void;
 }
 
-export default function AgenticEditProgress({ activity }: AgenticEditProgressProps) {
+export default function AgenticEditProgress({ activity, onJumpToCursor }: AgenticEditProgressProps) {
   const [isExpanded, setIsExpanded] = useState(true);
+  const [cursorPresence, setCursorPresence] = useState<CursorPresence | null>(null);
+  const [showDiff, setShowDiff] = useState(false);
   
   const { status, metadata } = activity;
   const progress = metadata?.agenticProgress;
   const isRunning = status === 'running';
   const isDone = status === 'done';
   const isError = status === 'error';
+
+  // Get current personality message based on state (Phase 3 enhancement)
+  const personalityMessage = useMemo(() => {
+    if (isDone) {
+      return getCompletionMessage(metadata?.changes || 0, metadata?.iterations || 0);
+    }
+    if (isError) {
+      return getPersonalityMessage('error');
+    }
+    if (cursorPresence) {
+      switch (cursorPresence.action) {
+        case 'thinking': return getPersonalityMessage('thinking');
+        case 'searching': return getPersonalityMessage('searching');
+        case 'reading': return getPersonalityMessage('reading');
+        case 'typing': return getPersonalityMessage('editing');
+        case 'selecting': return getPersonalityMessage('editing');
+        default: return getPersonalityMessage('thinking');
+      }
+    }
+    if (isRunning) {
+      return getPersonalityMessage('thinking');
+    }
+    return null;
+  }, [isDone, isError, isRunning, cursorPresence, metadata?.changes, metadata?.iterations]);
+
+  // Listen for cursor presence updates
+  useEffect(() => {
+    const socket = wsClient.socket;
+    if (!socket || !isRunning) return;
+
+    const handlePresence = (data: CursorPresence) => {
+      setCursorPresence(data);
+    };
+
+    socket.on('collaborate:evelyn_presence', handlePresence);
+    socket.on('collaborate:cursor_move', (data: any) => {
+      setCursorPresence({
+        action: data.action,
+        cursor: { line: data.line, column: data.column }
+      });
+    });
+
+    return () => {
+      socket.off('collaborate:evelyn_presence', handlePresence);
+      socket.off('collaborate:cursor_move');
+    };
+  }, [isRunning]);
+
+  // Clear presence when done
+  useEffect(() => {
+    if (!isRunning) {
+      setCursorPresence(null);
+    }
+  }, [isRunning]);
 
   // Debug logging
   console.log('[AgenticEditProgress] Rendering with activity:', activity);
@@ -119,10 +194,51 @@ export default function AgenticEditProgress({ activity }: AgenticEditProgressPro
               </div>
             )}
 
-            {!isRunning && activity.summary && (
+            {/* Personality Message (Phase 3 enhancement) */}
+            {personalityMessage && (
+              <div className="flex items-center gap-2 mt-2">
+                <Sparkles className={`w-3.5 h-3.5 ${styles.text}`} />
+                <p className={`text-xs font-mono ${styles.text}`}>
+                  {personalityMessage}
+                </p>
+              </div>
+            )}
+
+            {!isRunning && activity.summary && !personalityMessage && (
               <p className="text-xs text-white/70 mt-2">
                 {activity.summary}
               </p>
+            )}
+
+            {/* Cursor Position Indicator */}
+            {isRunning && cursorPresence && (
+              <div className="mt-3 flex items-center gap-3">
+                <div className="flex items-center gap-2 px-2 py-1 bg-terminal-900 border border-orange/30">
+                  <MousePointer2 className="w-3 h-3 text-orange animate-pulse" />
+                  <span className="text-[10px] font-mono text-orange">
+                    {cursorPresence.action === 'thinking' && 'Thinking...'}
+                    {cursorPresence.action === 'reading' && 'Reading'}
+                    {cursorPresence.action === 'typing' && 'Typing'}
+                    {cursorPresence.action === 'selecting' && 'Selecting'}
+                    {cursorPresence.action === 'searching' && 'Searching'}
+                  </span>
+                  {cursorPresence.cursor && (
+                    <span className="text-[10px] font-mono text-terminal-400">
+                      Line {cursorPresence.cursor.line}
+                    </span>
+                  )}
+                </div>
+                {cursorPresence.cursor && onJumpToCursor && (
+                  <button
+                    onClick={() => onJumpToCursor(cursorPresence.cursor!.line)}
+                    className="flex items-center gap-1 px-2 py-1 bg-orange/10 border border-orange/30 
+                             text-orange text-[10px] font-mono hover:bg-orange/20 transition-colors"
+                  >
+                    <MapPin className="w-3 h-3" />
+                    Jump to cursor
+                  </button>
+                )}
+              </div>
             )}
           </div>
 
@@ -176,8 +292,51 @@ export default function AgenticEditProgress({ activity }: AgenticEditProgressPro
                   </span>
                 </div>
 
-                {/* Think section */}
-                {iteration.think && (
+                {/* Structured Think section (Phase 1 enhancement) */}
+                {iteration.structuredThought ? (
+                  <div className="mb-2 space-y-2">
+                    {/* Observation */}
+                    <div>
+                      <div className="flex items-start gap-2 mb-1">
+                        <Eye className="w-3.5 h-3.5 text-blue-400 mt-0.5 flex-shrink-0" />
+                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-400">
+                          Observation
+                        </span>
+                      </div>
+                      <div className="ml-5 pl-3 border-l border-blue-400/30">
+                        <p className="text-xs text-white/80 leading-relaxed font-mono">
+                          {iteration.structuredThought.observation}
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {/* Plan */}
+                    <div>
+                      <div className="flex items-start gap-2 mb-1">
+                        <Target className="w-3.5 h-3.5 text-purple-400 mt-0.5 flex-shrink-0" />
+                        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-purple-400">
+                          Plan
+                        </span>
+                        {/* Risk badge */}
+                        <span className={`text-[9px] font-mono px-1.5 py-0.5 ${
+                          iteration.structuredThought.risk === 'low' 
+                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                            : iteration.structuredThought.risk === 'medium'
+                            ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                            : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                        }`}>
+                          {iteration.structuredThought.risk.toUpperCase()} RISK
+                        </span>
+                      </div>
+                      <div className="ml-5 pl-3 border-l border-purple-400/30">
+                        <p className="text-xs text-white/80 leading-relaxed font-mono">
+                          {iteration.structuredThought.plan}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : iteration.think && (
+                  /* Fallback to plain think */
                   <div className="mb-2">
                     <div className="flex items-start gap-2 mb-1">
                       <Brain className="w-3.5 h-3.5 text-purple-400 mt-0.5 flex-shrink-0" />

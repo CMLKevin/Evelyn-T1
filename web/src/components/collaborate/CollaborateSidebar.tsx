@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { useStore } from '../../state/store';
-import { FileText, Code, Lightbulb, History, ChevronRight, Search } from 'lucide-react';
+import { FileText, Code, Lightbulb, History, ChevronRight, Search, FolderTree as FolderIcon, ChevronDown } from 'lucide-react';
 import { Badge } from '../ui';
 import DocumentList from './DocumentList';
 import SuggestionPanel from './SuggestionPanel';
 import VersionHistory from './VersionHistory';
+import FolderTree from './FolderTree';
 
 type SidebarTab = 'documents' | 'suggestions' | 'versions';
 
@@ -13,6 +14,7 @@ export default function CollaborateSidebar() {
   const [activeTab, setActiveTab] = useState<SidebarTab>('documents');
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showFolders, setShowFolders] = useState(false);
 
   const { activeDocument, currentSuggestions } = collaborateState;
 
@@ -119,10 +121,45 @@ export default function CollaborateSidebar() {
       )}
 
       {/* Content */}
-      <div className="flex-1 overflow-y-auto">
-        {activeTab === 'documents' && <DocumentList searchQuery={searchQuery} />}
-        {activeTab === 'suggestions' && activeDocument && <SuggestionPanel />}
-        {activeTab === 'versions' && activeDocument && <VersionHistory />}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {activeTab === 'documents' && (
+          <>
+            {/* Folders Toggle */}
+            <button
+              onClick={() => setShowFolders(!showFolders)}
+              className="flex items-center justify-between px-4 py-2 border-b border-white/10
+                       text-terminal-400 hover:text-terminal-300 hover:bg-terminal-900 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                <FolderIcon className="w-4 h-4" />
+                <span className="text-xs font-mono uppercase">Folders</span>
+              </div>
+              <ChevronDown className={`w-4 h-4 transition-transform ${showFolders ? '' : '-rotate-90'}`} />
+            </button>
+            
+            {/* Folders Panel */}
+            {showFolders && (
+              <div className="h-48 border-b border-white/10 overflow-hidden">
+                <FolderTree showDocuments={false} />
+              </div>
+            )}
+            
+            {/* Documents */}
+            <div className="flex-1 overflow-y-auto">
+              <DocumentList searchQuery={searchQuery} />
+            </div>
+          </>
+        )}
+        {activeTab === 'suggestions' && activeDocument && (
+          <div className="flex-1 overflow-y-auto">
+            <SuggestionPanel />
+          </div>
+        )}
+        {activeTab === 'versions' && activeDocument && (
+          <div className="flex-1 overflow-y-auto">
+            <VersionHistory />
+          </div>
+        )}
       </div>
     </div>
   );

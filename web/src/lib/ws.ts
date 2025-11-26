@@ -31,6 +31,16 @@ export function useWebSocket() {
   return { sendMessage, lastMessage };
 }
 
+// ========================================
+// Timeout Configuration
+// ========================================
+const WS_TIMEOUTS = {
+  COLLABORATE_CHAT: 180000,    // 3 minutes for chat response
+  COLLABORATE_EDIT: 300000,    // 5 minutes for edit operations
+  AGENT_TASK: 300000,          // 5 minutes for agent tasks
+  DEFAULT: 60000,              // 1 minute default
+} as const;
+
 class WSClient {
   public socket: Socket | null = null;
   private url: string = WS_BASE_URL;
@@ -48,6 +58,40 @@ class WSClient {
 
   // Collaborate chat streaming buffer (separate from main chat)
   private collaborateStreamingMessage: string = '';
+  
+  // Active timeouts for cleanup
+  private activeTimeouts: Map<string, NodeJS.Timeout> = new Map();
+
+  /**
+   * Set a timeout for an operation and execute fallback if not cleared
+   */
+  private setOperationTimeout(
+    operationId: string, 
+    timeoutMs: number, 
+    onTimeout: () => void
+  ): void {
+    // Clear any existing timeout for this operation
+    this.clearOperationTimeout(operationId);
+    
+    const timeout = setTimeout(() => {
+      console.warn(`[WS] Operation timeout: ${operationId} after ${timeoutMs}ms`);
+      this.activeTimeouts.delete(operationId);
+      onTimeout();
+    }, timeoutMs);
+    
+    this.activeTimeouts.set(operationId, timeout);
+  }
+
+  /**
+   * Clear a timeout for an operation (call when operation completes)
+   */
+  clearOperationTimeout(operationId: string): void {
+    const timeout = this.activeTimeouts.get(operationId);
+    if (timeout) {
+      clearTimeout(timeout);
+      this.activeTimeouts.delete(operationId);
+    }
+  }
 
   connect() {
     // Prevent duplicate connections - check if already connected or connecting
@@ -252,10 +296,24 @@ class WSClient {
     });
 
     this.socket.on('collaborate:complete', () => {
+      // Clear any pending timeout
+      this.clearOperationTimeout('collaborate_chat');
+      
       if (this.collaborateStreamingMessage.trim()) {
         useStore.getState().addCollaborateChatMessage('evelyn', this.collaborateStreamingMessage.trim());
       }
       this.collaborateStreamingMessage = '';
+    });
+    
+    this.socket.on('collaborate:error', (data: any) => {
+      // Clear any pending timeout
+      this.clearOperationTimeout('collaborate_chat');
+      this.clearOperationTimeout('collaborate_agent_task');
+      
+      console.error('[WS] Collaborate error:', data);
+      useStore.getState().addCollaborateChatMessage('evelyn', 
+        `Sorry, I encountered an error: ${data.message || 'Unknown error'}. Please try again.`
+      );
     });
 
     this.socket.on('collaborate:user_message_logged', (message: any) => {
@@ -334,6 +392,11 @@ class WSClient {
       const completedAt = completedStatuses.includes(data.status)
         ? (data.timestamp || new Date().toISOString())
         : prev?.completedAt;
+
+      // Clear timeout when task completes or errors
+      if (completedStatuses.includes(data.status)) {
+        this.clearOperationTimeout('collaborate_agent_task');
+      }
 
       const originMessageIndex =
         typeof data.originMessageIndex === 'number'
@@ -634,6 +697,13 @@ class WSClient {
     // Reset any previous streaming buffer for collaborate chat
     this.collaborateStreamingMessage = '';
 
+    // Set timeout for this operation
+    this.setOperationTimeout('collaborate_chat', WS_TIMEOUTS.COLLABORATE_CHAT, () => {
+      useStore.getState().addCollaborateChatMessage('evelyn', 
+        'Sorry, the response is taking too long. Please try again or check your connection.'
+      );
+    });
+
     this.socket.emit('collaborate:chat', {
       documentId,
       message: intent ? `${intent}\n\n${userMessage}` : userMessage,
@@ -720,6 +790,23 @@ class WSClient {
     if (!this.socket?.connected) {
       throw new Error('Not connected to server');
     }
+    
+    // Set timeout for agent task
+    this.setOperationTimeout('collaborate_agent_task', WS_TIMEOUTS.AGENT_TASK, () => {
+      const store = useStore.getState();
+      store.setCollaborateAgentTask({
+        taskId: 'timeout',
+        kind: 'custom',
+        status: 'error',
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        steps: [],
+        currentStepId: null,
+        error: 'Task timed out. The operation took too long to complete.',
+        originMessageIndex: originMessageIndex ?? undefined
+      });
+    });
+    
     this.socket.emit('collaborate:run_agent_task', {
       documentId,
       instruction,

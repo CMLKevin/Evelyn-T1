@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { v4 as uuidv4 } from 'uuid';
+import { diffDocuments, generateAIExplanation, threeWayMerge, generateAIMergeResolutions } from '../agent/documentComparison.js';
 
 const router = Router();
 const prisma = new PrismaClient();
@@ -84,9 +85,22 @@ router.get('/api/collaborate', async (req, res) => {
 });
 
 // Get document by ID
+// NOTE: This route must be defined AFTER specific routes like /folders, /tags, /templates
+// to avoid matching those paths as :id
 router.get('/api/collaborate/:id', async (req, res) => {
   try {
+    // Skip reserved paths that should be handled by other routes
+    const reservedPaths = ['folders', 'tags', 'templates', 'compare', 'shortcuts'];
+    if (reservedPaths.includes(req.params.id)) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    
     const documentId = parseInt(req.params.id);
+    
+    // Validate documentId is a valid number
+    if (isNaN(documentId)) {
+      return res.status(400).json({ error: 'Invalid document ID' });
+    }
     
     const document = await prisma.collaborateDocument.findUnique({
       where: { id: documentId },
@@ -170,11 +184,11 @@ router.get('/api/collaborate/:id/chat', async (req, res) => {
           return null;
         }
       })
-      .filter((msg): msg is { id: number; role: 'user' | 'evelyn'; content: string; timestamp: string; messageIndex?: number } => msg !== null);
+      .filter((msg): msg is { id: number; role: 'user' | 'evelyn'; content: string; timestamp: string; messageIndex: number | undefined } => msg !== null);
 
     const result = filtered.map((msg, idx) => ({
       ...msg,
-      messageIndex: msg.messageIndex ?? idx
+      messageIndex: msg.messageIndex !== undefined ? msg.messageIndex : idx
     }));
 
     return res.json(result);
@@ -265,6 +279,451 @@ router.patch('/api/collaborate/:id/archive', async (req, res) => {
   } catch (error) {
     console.error('[Collaborate] Archive document error:', error);
     res.status(500).json({ error: 'Failed to archive document' });
+  }
+});
+
+// ========================================
+// Document Organization
+// ========================================
+
+// Toggle favorite
+router.put('/api/collaborate/:id/favorite', async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id);
+    const { isFavorite } = req.body;
+    
+    const document = await prisma.collaborateDocument.update({
+      where: { id: documentId },
+      data: { isFavorite: Boolean(isFavorite) }
+    });
+
+    console.log(`[Collaborate] Document ${documentId} favorite: ${isFavorite}`);
+    res.json(document);
+  } catch (error) {
+    console.error('[Collaborate] Toggle favorite error:', error);
+    res.status(500).json({ error: 'Failed to toggle favorite' });
+  }
+});
+
+// Update tags
+router.put('/api/collaborate/:id/tags', async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id);
+    const { tags } = req.body;
+    
+    if (!Array.isArray(tags)) {
+      return res.status(400).json({ error: 'Tags must be an array' });
+    }
+    
+    const document = await prisma.collaborateDocument.update({
+      where: { id: documentId },
+      data: { tags: JSON.stringify(tags) }
+    });
+
+    console.log(`[Collaborate] Document ${documentId} tags updated: ${tags.join(', ')}`);
+    return res.json({ ...document, tags });
+  } catch (error) {
+    console.error('[Collaborate] Update tags error:', error);
+    return res.status(500).json({ error: 'Failed to update tags' });
+  }
+});
+
+// Move to folder
+router.put('/api/collaborate/:id/folder', async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id);
+    const { folderId } = req.body;
+    
+    const document = await prisma.collaborateDocument.update({
+      where: { id: documentId },
+      data: { folderId: folderId ?? null }
+    });
+
+    console.log(`[Collaborate] Document ${documentId} moved to folder: ${folderId ?? 'root'}`);
+    res.json(document);
+  } catch (error) {
+    console.error('[Collaborate] Move to folder error:', error);
+    res.status(500).json({ error: 'Failed to move document to folder' });
+  }
+});
+
+// Update document color
+router.put('/api/collaborate/:id/color', async (req, res) => {
+  try {
+    const documentId = parseInt(req.params.id);
+    const { color } = req.body;
+    
+    const document = await prisma.collaborateDocument.update({
+      where: { id: documentId },
+      data: { color: color ?? null }
+    });
+
+    console.log(`[Collaborate] Document ${documentId} color: ${color ?? 'none'}`);
+    res.json(document);
+  } catch (error) {
+    console.error('[Collaborate] Update color error:', error);
+    res.status(500).json({ error: 'Failed to update document color' });
+  }
+});
+
+// ========================================
+// Folder Management
+// ========================================
+
+// Get all folders
+router.get('/api/collaborate/folders', async (req, res) => {
+  try {
+    const folders = await prisma.collaborateFolder.findMany({
+      orderBy: [{ parentId: 'asc' }, { order: 'asc' }, { name: 'asc' }],
+      include: {
+        _count: {
+          select: { documents: true }
+        }
+      }
+    });
+
+    res.json(folders);
+  } catch (error) {
+    console.error('[Collaborate] Get folders error:', error);
+    res.status(500).json({ error: 'Failed to get folders' });
+  }
+});
+
+// Create folder
+router.post('/api/collaborate/folders', async (req, res) => {
+  try {
+    const { name, parentId, color } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ error: 'Folder name is required' });
+    }
+
+    // Get next order number for this parent
+    const maxOrder = await prisma.collaborateFolder.aggregate({
+      where: { parentId: parentId ?? null },
+      _max: { order: true }
+    });
+
+    const folder = await prisma.collaborateFolder.create({
+      data: {
+        name,
+        parentId: parentId ?? null,
+        color: color ?? null,
+        order: (maxOrder._max.order ?? 0) + 1
+      }
+    });
+
+    console.log(`[Collaborate] Created folder: ${name}`);
+    return res.json(folder);
+  } catch (error) {
+    console.error('[Collaborate] Create folder error:', error);
+    return res.status(500).json({ error: 'Failed to create folder' });
+  }
+});
+
+// Update folder
+router.put('/api/collaborate/folders/:folderId', async (req, res) => {
+  try {
+    const folderId = parseInt(req.params.folderId);
+    const { name, color, order, parentId } = req.body;
+    
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name;
+    if (color !== undefined) updateData.color = color;
+    if (order !== undefined) updateData.order = order;
+    if (parentId !== undefined) updateData.parentId = parentId;
+
+    const folder = await prisma.collaborateFolder.update({
+      where: { id: folderId },
+      data: updateData
+    });
+
+    console.log(`[Collaborate] Updated folder ${folderId}`);
+    res.json(folder);
+  } catch (error) {
+    console.error('[Collaborate] Update folder error:', error);
+    res.status(500).json({ error: 'Failed to update folder' });
+  }
+});
+
+// Delete folder
+router.delete('/api/collaborate/folders/:folderId', async (req, res) => {
+  try {
+    const folderId = parseInt(req.params.folderId);
+    
+    // Move all documents in this folder to root
+    await prisma.collaborateDocument.updateMany({
+      where: { folderId },
+      data: { folderId: null }
+    });
+
+    // Move child folders to parent (or root)
+    const folder = await prisma.collaborateFolder.findUnique({
+      where: { id: folderId }
+    });
+
+    if (folder) {
+      await prisma.collaborateFolder.updateMany({
+        where: { parentId: folderId },
+        data: { parentId: folder.parentId }
+      });
+    }
+
+    await prisma.collaborateFolder.delete({
+      where: { id: folderId }
+    });
+
+    console.log(`[Collaborate] Deleted folder ${folderId}`);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Collaborate] Delete folder error:', error);
+    res.status(500).json({ error: 'Failed to delete folder' });
+  }
+});
+
+// Get all unique tags across documents
+router.get('/api/collaborate/tags', async (req, res) => {
+  try {
+    const documents = await prisma.collaborateDocument.findMany({
+      where: { status: 'active' },
+      select: { tags: true }
+    });
+
+    const allTags = new Set<string>();
+    documents.forEach(doc => {
+      try {
+        const tags = JSON.parse(doc.tags);
+        if (Array.isArray(tags)) {
+          tags.forEach(tag => allTags.add(tag));
+        }
+      } catch {
+        // Ignore parse errors
+      }
+    });
+
+    res.json([...allTags].sort());
+  } catch (error) {
+    console.error('[Collaborate] Get all tags error:', error);
+    res.status(500).json({ error: 'Failed to get tags' });
+  }
+});
+
+// ========================================
+// Template Management
+// ========================================
+
+// Get all templates
+router.get('/api/collaborate/templates', async (req, res) => {
+  try {
+    const templates = await prisma.collaborateTemplate.findMany({
+      orderBy: [{ isBuiltIn: 'desc' }, { usageCount: 'desc' }, { name: 'asc' }]
+    });
+
+    // Parse placeholders JSON for each template
+    const parsedTemplates = templates.map(t => ({
+      ...t,
+      placeholders: JSON.parse(t.placeholders || '[]')
+    }));
+
+    return res.json(parsedTemplates);
+  } catch (error) {
+    console.error('[Collaborate] Get templates error:', error);
+    return res.status(500).json({ error: 'Failed to get templates' });
+  }
+});
+
+// Get single template
+router.get('/api/collaborate/templates/:id', async (req, res) => {
+  try {
+    const templateId = parseInt(req.params.id);
+    const template = await prisma.collaborateTemplate.findUnique({
+      where: { id: templateId }
+    });
+
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    return res.json({
+      ...template,
+      placeholders: JSON.parse(template.placeholders || '[]')
+    });
+  } catch (error) {
+    console.error('[Collaborate] Get template error:', error);
+    return res.status(500).json({ error: 'Failed to get template' });
+  }
+});
+
+// Create custom template
+router.post('/api/collaborate/templates', async (req, res) => {
+  try {
+    const { name, description, category, contentType, language, content, placeholders, icon } = req.body;
+
+    const template = await prisma.collaborateTemplate.create({
+      data: {
+        name,
+        description: description || '',
+        category: category || 'custom',
+        contentType: contentType || 'text',
+        language,
+        content,
+        placeholders: JSON.stringify(placeholders || []),
+        icon,
+        isBuiltIn: false
+      }
+    });
+
+    console.log(`[Collaborate] Created template: ${template.name}`);
+    res.json({
+      ...template,
+      placeholders: JSON.parse(template.placeholders)
+    });
+  } catch (error) {
+    console.error('[Collaborate] Create template error:', error);
+    res.status(500).json({ error: 'Failed to create template' });
+  }
+});
+
+// Track template usage
+router.post('/api/collaborate/templates/:id/use', async (req, res) => {
+  try {
+    const templateId = parseInt(req.params.id);
+    
+    await prisma.collaborateTemplate.update({
+      where: { id: templateId },
+      data: { usageCount: { increment: 1 } }
+    });
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[Collaborate] Track template usage error:', error);
+    res.status(500).json({ error: 'Failed to track usage' });
+  }
+});
+
+// Delete custom template
+router.delete('/api/collaborate/templates/:id', async (req, res) => {
+  try {
+    const templateId = parseInt(req.params.id);
+    
+    const template = await prisma.collaborateTemplate.findUnique({
+      where: { id: templateId }
+    });
+
+    if (!template) {
+      return res.status(404).json({ error: 'Template not found' });
+    }
+
+    if (template.isBuiltIn) {
+      return res.status(400).json({ error: 'Cannot delete built-in templates' });
+    }
+
+    await prisma.collaborateTemplate.delete({
+      where: { id: templateId }
+    });
+
+    console.log(`[Collaborate] Deleted template: ${template.name}`);
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('[Collaborate] Delete template error:', error);
+    return res.status(500).json({ error: 'Failed to delete template' });
+  }
+});
+
+// ========================================
+// Document Comparison
+// ========================================
+
+// Compare two versions or documents
+router.post('/api/collaborate/compare', async (req, res) => {
+  try {
+    const { documentIdA, versionA, documentIdB, versionB, contentA, contentB } = req.body;
+
+    let docAContent: string;
+    let docBContent: string;
+
+    // Get content from versions or direct content
+    if (contentA && contentB) {
+      docAContent = contentA;
+      docBContent = contentB;
+    } else {
+      // Fetch from database
+      if (versionA !== undefined) {
+        const version = await prisma.collaborateVersion.findFirst({
+          where: { documentId: documentIdA, version: versionA }
+        });
+        docAContent = version?.content || '';
+      } else {
+        const doc = await prisma.collaborateDocument.findUnique({
+          where: { id: documentIdA },
+          include: { versions: { orderBy: { version: 'desc' }, take: 1 } }
+        });
+        docAContent = (doc?.versions[0] as any)?.content || '';
+      }
+
+      if (versionB !== undefined) {
+        const version = await prisma.collaborateVersion.findFirst({
+          where: { documentId: documentIdB || documentIdA, version: versionB }
+        });
+        docBContent = version?.content || '';
+      } else if (documentIdB) {
+        const doc = await prisma.collaborateDocument.findUnique({
+          where: { id: documentIdB },
+          include: { versions: { orderBy: { version: 'desc' }, take: 1 } }
+        });
+        docBContent = (doc?.versions[0] as any)?.content || '';
+      } else {
+        docBContent = docAContent;
+      }
+    }
+
+    // Generate diff
+    const comparison = diffDocuments(docAContent, docBContent);
+
+    res.json({
+      comparison,
+      contentA: docAContent,
+      contentB: docBContent
+    });
+  } catch (error) {
+    console.error('[Collaborate] Compare error:', error);
+    res.status(500).json({ error: 'Failed to compare documents' });
+  }
+});
+
+// Get AI explanation for changes
+router.post('/api/collaborate/compare/explain', async (req, res) => {
+  try {
+    const { contentA, contentB, comparison, contentType } = req.body;
+
+    const explanation = await generateAIExplanation(contentA, contentB, comparison, contentType);
+
+    res.json(explanation);
+  } catch (error) {
+    console.error('[Collaborate] AI explanation error:', error);
+    res.status(500).json({ error: 'Failed to generate explanation' });
+  }
+});
+
+// Merge documents
+router.post('/api/collaborate/merge', async (req, res) => {
+  try {
+    const { base, left, right, resolveWithAI } = req.body;
+
+    const mergeResult = threeWayMerge(base, left, right);
+
+    // Generate AI resolutions if requested and there are conflicts
+    if (resolveWithAI && mergeResult.conflicts.length > 0) {
+      const aiResolutions = await generateAIMergeResolutions(mergeResult.conflicts, {
+        contentType: req.body.contentType
+      });
+      mergeResult.aiResolutions = aiResolutions;
+    }
+
+    res.json(mergeResult);
+  } catch (error) {
+    console.error('[Collaborate] Merge error:', error);
+    res.status(500).json({ error: 'Failed to merge documents' });
   }
 });
 

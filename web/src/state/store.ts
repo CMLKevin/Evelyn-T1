@@ -281,6 +281,17 @@ interface BrowsingResult {
 // COLLABORATE FEATURE INTERFACES
 // ========================================
 
+interface CollaborateFolder {
+  id: number;
+  name: string;
+  color?: string;
+  parentId?: number;
+  order: number;
+  createdAt: string;
+  updatedAt: string;
+  children?: CollaborateFolder[];
+}
+
 interface CollaborateDocument {
   id: number;
   sessionId: string;
@@ -289,6 +300,11 @@ interface CollaborateDocument {
   language?: string;
   status: 'active' | 'archived';
   metadata?: any;
+  // Document organization fields
+  tags: string[];
+  isFavorite: boolean;
+  folderId?: number;
+  color?: string;
   createdAt: string;
   updatedAt: string;
   lastAccessedAt: string;
@@ -397,6 +413,16 @@ interface CollaborateAgentTaskSession {
   originMessageIndex?: number;
 }
 
+interface CollaborateFilters {
+  tags: string[];
+  contentType: 'all' | 'text' | 'code' | 'mixed';
+  dateRange: 'all' | 'today' | 'week' | 'month';
+  sortBy: 'name' | 'modified' | 'created' | 'type';
+  sortOrder: 'asc' | 'desc';
+  showFavoritesOnly: boolean;
+  folderId: number | null;
+}
+
 interface CollaborateState {
   activeDocument: CollaborateDocument | null;
   documentList: CollaborateDocument[];
@@ -414,6 +440,10 @@ interface CollaborateState {
   lastSaved: string | null;
   agentTask: CollaborateAgentTaskSession | null;
   lastIntentDetection: CollaborateIntentDetection | null;
+  // Document organization
+  folders: CollaborateFolder[];
+  filters: CollaborateFilters;
+  allTags: string[];
 }
 
 interface LogEntry {
@@ -595,6 +625,19 @@ interface Store {
   applyCollaborateShortcut: (shortcutType: string, options?: any) => Promise<void>;
   loadCollaborateVersionHistory: () => Promise<void>;
   revertCollaborateToVersion: (versionId: number) => Promise<void>;
+  
+  // Document organization
+  setCollaborateFilters: (filters: Partial<CollaborateFilters>) => void;
+  toggleDocumentFavorite: (documentId: number) => Promise<void>;
+  updateDocumentTags: (documentId: number, tags: string[]) => Promise<void>;
+  moveDocumentToFolder: (documentId: number, folderId: number | null) => Promise<void>;
+  updateDocumentColor: (documentId: number, color: string | null) => Promise<void>;
+  loadCollaborateFolders: () => Promise<void>;
+  createCollaborateFolder: (name: string, parentId?: number, color?: string) => Promise<void>;
+  updateCollaborateFolder: (folderId: number, updates: { name?: string; color?: string; order?: number }) => Promise<void>;
+  deleteCollaborateFolder: (folderId: number) => Promise<void>;
+  setAllTags: (tags: string[]) => void;
+  getFilteredDocuments: () => CollaborateDocument[];
 }
 
 export const useStore = create<Store>((set, get) => ({
@@ -671,6 +714,18 @@ export const useStore = create<Store>((set, get) => ({
     lastSaved: null,
     agentTask: null,
     lastIntentDetection: null,
+    // Document organization
+    folders: [],
+    filters: {
+      tags: [],
+      contentType: 'all',
+      dateRange: 'all',
+      sortBy: 'modified',
+      sortOrder: 'desc',
+      showFavoritesOnly: false,
+      folderId: null,
+    },
+    allTags: [],
   },
 
   setConnected: (connected) => set({ connected }),
@@ -1483,11 +1538,50 @@ export const useStore = create<Store>((set, get) => ({
       console.log('[Store] Loading collaborate documents...');
       const response = await fetch('http://localhost:3001/api/collaborate?limit=50');
       if (response.ok) {
-        const documents = await response.json();
-        console.log(`[Store] Loaded ${documents.length} collaborate documents`);
-        set((state) => ({
-          collaborateState: { ...state.collaborateState, documentList: documents }
+        const rawDocuments = await response.json();
+        
+        // Parse tags JSON for each document and add default values
+        const documents = rawDocuments.map((doc: any) => ({
+          ...doc,
+          tags: Array.isArray(doc.tags) ? doc.tags : (
+            typeof doc.tags === 'string' ? (() => {
+              try { return JSON.parse(doc.tags); } catch { return []; }
+            })() : []
+          ),
+          isFavorite: doc.isFavorite ?? false,
+          color: doc.color ?? undefined,
+          folderId: doc.folderId ?? undefined
         }));
+        
+        // Collect all unique tags from documents
+        const allTagsSet = new Set<string>();
+        documents.forEach((doc: any) => {
+          if (Array.isArray(doc.tags)) {
+            doc.tags.forEach((tag: string) => allTagsSet.add(tag));
+          }
+        });
+        
+        console.log(`[Store] Loaded ${documents.length} collaborate documents with ${allTagsSet.size} unique tags`);
+        set((state) => ({
+          collaborateState: { 
+            ...state.collaborateState, 
+            documentList: documents,
+            allTags: [...allTagsSet].sort()
+          }
+        }));
+      }
+      
+      // Also load folders
+      try {
+        const foldersResponse = await fetch('http://localhost:3001/api/collaborate/folders');
+        if (foldersResponse.ok) {
+          const folders = await foldersResponse.json();
+          set((state) => ({
+            collaborateState: { ...state.collaborateState, folders }
+          }));
+        }
+      } catch (folderError) {
+        console.error('[Store] Failed to load folders:', folderError);
       }
     } catch (error) {
       console.error('[Store] Failed to load collaborate documents:', error);
@@ -1499,7 +1593,21 @@ export const useStore = create<Store>((set, get) => ({
       console.log(`[Store] Loading collaborate document ${documentId}...`);
       const response = await fetch(`http://localhost:3001/api/collaborate/${documentId}`);
       if (response.ok) {
-        const document = await response.json();
+        const rawDocument = await response.json();
+        
+        // Parse tags JSON and add default values
+        const document = {
+          ...rawDocument,
+          tags: Array.isArray(rawDocument.tags) ? rawDocument.tags : (
+            typeof rawDocument.tags === 'string' ? (() => {
+              try { return JSON.parse(rawDocument.tags); } catch { return []; }
+            })() : []
+          ),
+          isFavorite: rawDocument.isFavorite ?? false,
+          color: rawDocument.color ?? undefined,
+          folderId: rawDocument.folderId ?? undefined
+        };
+        
         console.log(`[Store] Loaded document: ${document.title}`);
         
         // Get the latest version content if available
@@ -1607,5 +1715,296 @@ export const useStore = create<Store>((set, get) => ({
   
   revertCollaborateToVersion: async (versionId) => {
     await get().revertToVersion(versionId);
+  },
+  
+  // ========================================
+  // DOCUMENT ORGANIZATION ACTIONS
+  // ========================================
+  
+  setCollaborateFilters: (filters) => {
+    set((state) => ({
+      collaborateState: {
+        ...state.collaborateState,
+        filters: { ...state.collaborateState.filters, ...filters }
+      }
+    }));
+  },
+  
+  toggleDocumentFavorite: async (documentId) => {
+    try {
+      const state = get();
+      const doc = state.collaborateState.documentList.find(d => d.id === documentId);
+      if (!doc) return;
+      
+      const newFavorite = !doc.isFavorite;
+      const response = await fetch(`http://localhost:3001/api/collaborate/${documentId}/favorite`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isFavorite: newFavorite })
+      });
+      
+      if (response.ok) {
+        set((state) => ({
+          collaborateState: {
+            ...state.collaborateState,
+            documentList: state.collaborateState.documentList.map(d =>
+              d.id === documentId ? { ...d, isFavorite: newFavorite } : d
+            ),
+            activeDocument: state.collaborateState.activeDocument?.id === documentId
+              ? { ...state.collaborateState.activeDocument, isFavorite: newFavorite }
+              : state.collaborateState.activeDocument
+          }
+        }));
+      }
+    } catch (error) {
+      console.error('[Store] Failed to toggle favorite:', error);
+    }
+  },
+  
+  updateDocumentTags: async (documentId, tags) => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/collaborate/${documentId}/tags`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags })
+      });
+      
+      if (response.ok) {
+        set((state) => {
+          // Update allTags with any new tags
+          const newAllTags = [...new Set([...state.collaborateState.allTags, ...tags])];
+          
+          return {
+            collaborateState: {
+              ...state.collaborateState,
+              documentList: state.collaborateState.documentList.map(d =>
+                d.id === documentId ? { ...d, tags } : d
+              ),
+              activeDocument: state.collaborateState.activeDocument?.id === documentId
+                ? { ...state.collaborateState.activeDocument, tags }
+                : state.collaborateState.activeDocument,
+              allTags: newAllTags
+            }
+          };
+        });
+      }
+    } catch (error) {
+      console.error('[Store] Failed to update tags:', error);
+    }
+  },
+  
+  moveDocumentToFolder: async (documentId, folderId) => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/collaborate/${documentId}/folder`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ folderId })
+      });
+      
+      if (response.ok) {
+        set((state) => ({
+          collaborateState: {
+            ...state.collaborateState,
+            documentList: state.collaborateState.documentList.map(d =>
+              d.id === documentId ? { ...d, folderId: folderId ?? undefined } : d
+            ),
+            activeDocument: state.collaborateState.activeDocument?.id === documentId
+              ? { ...state.collaborateState.activeDocument, folderId: folderId ?? undefined }
+              : state.collaborateState.activeDocument
+          }
+        }));
+      }
+    } catch (error) {
+      console.error('[Store] Failed to move document to folder:', error);
+    }
+  },
+  
+  updateDocumentColor: async (documentId, color) => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/collaborate/${documentId}/color`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ color })
+      });
+      
+      if (response.ok) {
+        set((state) => ({
+          collaborateState: {
+            ...state.collaborateState,
+            documentList: state.collaborateState.documentList.map(d =>
+              d.id === documentId ? { ...d, color: color ?? undefined } : d
+            ),
+            activeDocument: state.collaborateState.activeDocument?.id === documentId
+              ? { ...state.collaborateState.activeDocument, color: color ?? undefined }
+              : state.collaborateState.activeDocument
+          }
+        }));
+      }
+    } catch (error) {
+      console.error('[Store] Failed to update document color:', error);
+    }
+  },
+  
+  loadCollaborateFolders: async () => {
+    try {
+      const response = await fetch('http://localhost:3001/api/collaborate/folders');
+      if (response.ok) {
+        const folders = await response.json();
+        set((state) => ({
+          collaborateState: { ...state.collaborateState, folders }
+        }));
+      }
+    } catch (error) {
+      console.error('[Store] Failed to load folders:', error);
+    }
+  },
+  
+  createCollaborateFolder: async (name, parentId, color) => {
+    try {
+      const response = await fetch('http://localhost:3001/api/collaborate/folders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, parentId, color })
+      });
+      
+      if (response.ok) {
+        const folder = await response.json();
+        set((state) => ({
+          collaborateState: {
+            ...state.collaborateState,
+            folders: [...state.collaborateState.folders, folder]
+          }
+        }));
+      }
+    } catch (error) {
+      console.error('[Store] Failed to create folder:', error);
+    }
+  },
+  
+  updateCollaborateFolder: async (folderId, updates) => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/collaborate/folders/${folderId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      
+      if (response.ok) {
+        set((state) => ({
+          collaborateState: {
+            ...state.collaborateState,
+            folders: state.collaborateState.folders.map(f =>
+              f.id === folderId ? { ...f, ...updates } : f
+            )
+          }
+        }));
+      }
+    } catch (error) {
+      console.error('[Store] Failed to update folder:', error);
+    }
+  },
+  
+  deleteCollaborateFolder: async (folderId) => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/collaborate/folders/${folderId}`, {
+        method: 'DELETE'
+      });
+      
+      if (response.ok) {
+        set((state) => ({
+          collaborateState: {
+            ...state.collaborateState,
+            folders: state.collaborateState.folders.filter(f => f.id !== folderId),
+            // Move documents from deleted folder to root
+            documentList: state.collaborateState.documentList.map(d =>
+              d.folderId === folderId ? { ...d, folderId: undefined } : d
+            )
+          }
+        }));
+      }
+    } catch (error) {
+      console.error('[Store] Failed to delete folder:', error);
+    }
+  },
+  
+  setAllTags: (tags) => {
+    set((state) => ({
+      collaborateState: { ...state.collaborateState, allTags: tags }
+    }));
+  },
+  
+  getFilteredDocuments: () => {
+    const state = get();
+    const { documentList, filters } = state.collaborateState;
+    
+    let filtered = [...documentList];
+    
+    // Filter by favorites
+    if (filters.showFavoritesOnly) {
+      filtered = filtered.filter(d => d.isFavorite);
+    }
+    
+    // Filter by content type
+    if (filters.contentType !== 'all') {
+      filtered = filtered.filter(d => d.contentType === filters.contentType);
+    }
+    
+    // Filter by tags
+    if (filters.tags.length > 0) {
+      filtered = filtered.filter(d => 
+        filters.tags.some(tag => d.tags.includes(tag))
+      );
+    }
+    
+    // Filter by folder
+    if (filters.folderId !== null) {
+      filtered = filtered.filter(d => d.folderId === filters.folderId);
+    }
+    
+    // Filter by date range
+    if (filters.dateRange !== 'all') {
+      const now = new Date();
+      let cutoff: Date;
+      
+      switch (filters.dateRange) {
+        case 'today':
+          cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          break;
+        case 'week':
+          cutoff = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+          break;
+        case 'month':
+          cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+          break;
+        default:
+          cutoff = new Date(0);
+      }
+      
+      filtered = filtered.filter(d => new Date(d.updatedAt) >= cutoff);
+    }
+    
+    // Sort
+    filtered.sort((a, b) => {
+      let comparison = 0;
+      
+      switch (filters.sortBy) {
+        case 'name':
+          comparison = a.title.localeCompare(b.title);
+          break;
+        case 'modified':
+          comparison = new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+          break;
+        case 'created':
+          comparison = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+          break;
+        case 'type':
+          comparison = a.contentType.localeCompare(b.contentType);
+          break;
+      }
+      
+      return filters.sortOrder === 'asc' ? comparison : -comparison;
+    });
+    
+    return filtered;
   }
 }));

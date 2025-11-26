@@ -277,6 +277,23 @@ model MoodHistory {
 // COLLABORATE MODELS (Canvas-like feature)
 // ========================================
 
+model CollaborateFolder {
+  id          Int      @id @default(autoincrement())
+  name        String
+  color       String?  // Accent color for visual organization
+  parentId    Int?     // For nested folders
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  parent      CollaborateFolder?  @relation("FolderHierarchy", fields: [parentId], references: [id], onDelete: SetNull)
+  children    CollaborateFolder[] @relation("FolderHierarchy")
+  documents   CollaborateDocument[]
+
+  @@index([parentId])
+  @@index([order])
+}
+
 model CollaborateDocument {
   id              Int      @id @default(autoincrement())
   sessionId       String   @unique
@@ -285,10 +302,18 @@ model CollaborateDocument {
   language        String?  // For code: javascript, python, typescript, etc.
   status          String   @default("active") // active | archived
   metadata        String?  // JSON: { readingLevel, theme, project info }
+  
+  // Document organization fields
+  tags            String   @default("[]") // JSON array of tag strings
+  isFavorite      Boolean  @default(false)
+  folderId        Int?
+  color           String?  // Accent color for visual organization
+  
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   lastAccessedAt  DateTime @default(now())
   
+  folder          CollaborateFolder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
   versions        CollaborateVersion[]
   suggestions     CollaborateSuggestion[]
   comments        CollaborateComment[]
@@ -297,6 +322,8 @@ model CollaborateDocument {
   @@index([sessionId])
   @@index([status])
   @@index([lastAccessedAt])
+  @@index([isFavorite])
+  @@index([folderId])
 }
 
 model CollaborateVersion {
@@ -370,4 +397,24 @@ model CollaborateEdit {
 
   @@index([documentId, createdAt])
   @@index([author])
+}
+
+model CollaborateTemplate {
+  id            Int      @id @default(autoincrement())
+  name          String
+  description   String
+  category      String   // code | writing | business | custom
+  contentType   String   // text | code | mixed
+  language      String?  // For code templates: javascript, python, etc.
+  content       String   // Template content with {{placeholders}}
+  placeholders  String   @default("[]") // JSON: [{ key, description, default }]
+  icon          String?  // Lucide icon name
+  isBuiltIn     Boolean  @default(false)
+  usageCount    Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([category])
+  @@index([isBuiltIn])
+  @@index([usageCount])
 }
