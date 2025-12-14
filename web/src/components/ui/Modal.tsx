@@ -46,34 +46,34 @@ export const Modal: FC<ModalProps> = ({
   
   return (
     <div
-      className="fixed inset-0 bg-black/90 z-50 flex items-center justify-center p-4 animate-fade-in"
+      className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-fade-in"
       onClick={onClose}
     >
       <div
-        className={`w-full ${sizeStyles[size]} bg-terminal-900 border-2 border-white/20 shadow-terminal animate-fade-in-up`}
+        className={`w-full ${sizeStyles[size]} bg-glass-card backdrop-blur-xl border border-white/10 shadow-2xl rounded-xl animate-fade-in-up overflow-hidden`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Terminal-style Title Bar */}
+        {/* Glass Title Bar with gradient */}
         {title && (
-          <div className="flex items-center justify-between px-4 py-2 bg-terminal-dark border-b-2 border-white/20">
+          <div className="flex items-center justify-between px-5 py-3 bg-gradient-to-r from-orange/10 to-transparent border-b border-white/10">
             <h2 className="text-white font-mono font-bold text-sm uppercase tracking-wide">{title}</h2>
             <button
               onClick={onClose}
-              className="px-2 py-1 hover:bg-white/10 border border-white/20 hover:border-white/30 transition-colors group"
+              className="p-1.5 hover:bg-white/10 rounded-md border border-white/10 hover:border-white/20 transition-all group"
             >
               <X className="w-4 h-4 text-terminal-400 group-hover:text-white transition-colors" />
             </button>
           </div>
         )}
-        
-        {/* Body */}
-        <div className="px-6 py-4">
+
+        {/* Body with proper padding */}
+        <div className="px-6 py-5">
           {children}
         </div>
-        
+
         {/* Footer */}
         {footer && (
-          <div className="px-6 py-4 border-t-2 border-white/20 bg-terminal-dark flex justify-end gap-3">
+          <div className="px-6 py-4 border-t border-white/10 bg-surface-1/50 flex justify-end gap-3">
             {footer}
           </div>
         )}

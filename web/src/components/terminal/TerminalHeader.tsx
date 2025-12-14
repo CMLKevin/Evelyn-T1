@@ -13,11 +13,11 @@ export default function TerminalHeader() {
   }, []);
 
   return (
-    <div className="px-5 py-3 flex items-center justify-between border-b-2 border-white/20 bg-terminal-dark select-none">
+    <div className="glass-header px-5 py-3 flex items-center justify-between select-none rounded-t-2xl">
       {/* Left: Terminal Title Bar Branding */}
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-3">
-          <div className="bg-orange/20 p-2 border-2 border-orange">
+          <div className="bg-orange/20 p-2 border border-orange/60 rounded-lg">
             <Sparkles className="w-4 h-4 text-orange" />
           </div>
           <div>
@@ -31,16 +31,16 @@ export default function TerminalHeader() {
 
       {/* Right: Status & Actions */}
       <div className="flex items-center gap-3">
-        {/* Connection Status */}
-        <div className="flex items-center gap-2 px-3 py-1 bg-terminal-900 border border-white/20">
+        {/* Connection Status - Pill shaped */}
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-2/80 backdrop-blur-sm border border-white/10 rounded-full">
           <StatusDot variant={connected ? 'online' : 'offline'} animated={connected} />
           <span className="text-xs font-mono font-medium text-terminal-400">
             {connected ? 'CONNECTED' : 'OFFLINE'}
           </span>
         </div>
 
-        {/* Time */}
-        <div className="flex items-center gap-2 px-3 py-1 bg-terminal-900 border border-white/20">
+        {/* Time - Pill shaped */}
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-2/80 backdrop-blur-sm border border-white/10 rounded-full">
           <Clock className="w-3.5 h-3.5 text-orange" />
           <span className="text-xs font-mono text-terminal-300">
             {currentTime.toLocaleTimeString('en-US', { hour12: false })}
@@ -48,8 +48,8 @@ export default function TerminalHeader() {
         </div>
 
         {/* Settings Button */}
-        <button 
-          className="p-2 hover:bg-white/10 border border-white/20 hover:border-white/30 transition-colors duration-150 group"
+        <button
+          className="p-2 hover:bg-white/10 border border-white/15 hover:border-white/25 rounded-lg transition-all duration-200 group"
           title="Settings"
           onClick={() => setSettingsModalOpen(true)}
         >

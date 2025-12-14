@@ -13,8 +13,11 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(({
   className = '',
   ...props
 }, ref) => {
-  const baseStyles = 'w-full px-3 py-2 bg-terminal-black border-2 text-white placeholder-terminal-500 text-sm font-mono focus:outline-none focus:border-orange transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed';
-  const borderStyles = error ? 'border-red-500' : 'border-white/20 hover:border-white/30';
+  // Base styles with rounded corners and focus glow
+  const baseStyles = 'w-full px-3 py-2.5 bg-black/40 backdrop-blur-sm border text-white placeholder-terminal-500 text-sm font-mono focus:outline-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed rounded-sm';
+  const borderStyles = error
+    ? 'border-red-500/70 focus:border-red-500 focus:shadow-[0_0_0_3px_rgba(239,68,68,0.15)]'
+    : 'border-white/15 hover:border-white/25 focus:border-orange focus:shadow-[0_0_0_3px_rgba(255,107,53,0.15)]';
   
   return (
     <div className="space-y-1">
@@ -55,8 +58,11 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(({
   className = '',
   ...props
 }, ref) => {
-  const baseStyles = 'w-full px-3 py-2 bg-terminal-black border-2 text-white placeholder-terminal-500 text-sm font-mono focus:outline-none focus:border-orange resize-none transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed';
-  const borderStyles = error ? 'border-red-500' : 'border-white/20 hover:border-white/30';
+  // Base styles with rounded corners and focus glow
+  const baseStyles = 'w-full px-3 py-2.5 bg-black/40 backdrop-blur-sm border text-white placeholder-terminal-500 text-sm font-mono focus:outline-none resize-none transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed rounded-sm';
+  const borderStyles = error
+    ? 'border-red-500/70 focus:border-red-500 focus:shadow-[0_0_0_3px_rgba(239,68,68,0.15)]'
+    : 'border-white/15 hover:border-white/25 focus:border-orange focus:shadow-[0_0_0_3px_rgba(255,107,53,0.15)]';
   
   return (
     <div className="space-y-1">

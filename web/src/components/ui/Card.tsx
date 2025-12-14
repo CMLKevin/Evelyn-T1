@@ -13,13 +13,14 @@ export const Card: FC<CardProps> = ({
   className = '',
   ...props
 }) => {
-  const baseStyles = 'transition-colors duration-150';
-  
+  // Base styles with rounded corners
+  const baseStyles = 'transition-all duration-200 rounded-lg';
+
   const variantStyles: Record<CardVariant, string> = {
-    default: 'px-4 py-3 bg-terminal-900 border-2 border-white/20',
-    glass: 'px-4 py-3 bg-terminal-dark border border-white/10',
-    elevated: 'px-4 py-3 bg-terminal-900 border-2 border-white/20 shadow-terminal',
-    interactive: 'px-4 py-3 bg-terminal-900 border-2 border-white/20 hover:border-white/30 hover:bg-terminal-800 cursor-pointer',
+    default: 'px-4 py-3 bg-surface-2 border border-white/10',
+    glass: 'px-4 py-3 bg-glass-dark backdrop-blur-lg border border-white/8 shadow-glass',
+    elevated: 'px-4 py-3 bg-surface-3 border border-white/12 shadow-lg',
+    interactive: 'px-4 py-3 bg-surface-2 border border-white/10 hover:border-white/20 hover:bg-surface-3 cursor-pointer hover:-translate-y-0.5 hover:shadow-lg',
   };
   
   return (

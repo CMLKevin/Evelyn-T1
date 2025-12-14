@@ -16,17 +16,18 @@ export const Badge: FC<BadgeProps> = ({
   className = '',
   ...props
 }) => {
-  const baseStyles = 'inline-flex items-center gap-1 font-mono font-medium uppercase tracking-wide';
-  
+  // Base styles with rounded corners
+  const baseStyles = 'inline-flex items-center gap-1 font-mono font-medium uppercase tracking-wide rounded-sm';
+
   const variantStyles: Record<BadgeVariant, string> = {
-    default: 'bg-terminal-900 border border-white/20 text-terminal-400',
-    success: 'bg-green-500/10 border border-green-500 text-green-500',
-    warning: 'bg-yellow-500/10 border border-yellow-500 text-yellow-500',
-    error: 'bg-red-500/10 border border-red-500 text-red-500',
-    info: 'bg-cyan-500/10 border border-cyan-500 text-cyan-500',
-    purple: 'bg-orange/10 border border-orange text-orange',
+    default: 'bg-surface-3 border border-white/15 text-terminal-400',
+    success: 'bg-green-500/15 border border-green-500/50 text-green-400',
+    warning: 'bg-yellow-500/15 border border-yellow-500/50 text-yellow-400',
+    error: 'bg-red-500/15 border border-red-500/50 text-red-400',
+    info: 'bg-cyan-500/15 border border-cyan-500/50 text-cyan-400',
+    purple: 'bg-orange/15 border border-orange/50 text-orange',
   };
-  
+
   const sizeStyles: Record<BadgeSize, string> = {
     sm: 'px-2 py-0.5 text-[9px]',
     md: 'px-2.5 py-0.5 text-[10px]',

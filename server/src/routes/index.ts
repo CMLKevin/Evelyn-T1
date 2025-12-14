@@ -203,6 +203,9 @@ export function setupRoutes(app: Express, io: Server) {
   // Update settings
   app.post('/api/settings', async (req, res) => {
     try {
+      // Import cache invalidation
+      const { invalidateSettingsCache } = await import('../utils/settings.js');
+      
       let settings = await db.settings.findFirst();
       if (!settings) {
         settings = await db.settings.create({ data: req.body });
@@ -212,6 +215,11 @@ export function setupRoutes(app: Express, io: Server) {
           data: req.body
         });
       }
+      
+      // Invalidate cache so new settings take effect immediately
+      invalidateSettingsCache();
+      console.log('[Settings] Updated and cache invalidated:', req.body.webSearchProvider ? `webSearchProvider=${req.body.webSearchProvider}` : '');
+      
       return res.json(settings);
     } catch (error) {
       console.error('Update settings error:', error);
@@ -231,13 +239,30 @@ export function setupRoutes(app: Express, io: Server) {
     }
   });
 
-  // Manual search
+  // Manual search (uses Perplexity Sonar Pro via OpenRouter)
   app.post('/api/search', async (req, res) => {
     try {
-      const { query, complexity } = req.body;
-      const { perplexityClient } = await import('../providers/perplexity.js');
-      const result = await perplexityClient.search(query, complexity || 'simple');
-      return res.json(result);
+      const { query } = req.body;
+      const { openRouterClient } = await import('../providers/openrouter.js');
+      
+      const messages = [
+        { role: 'user' as const, content: `${query}\n\nProvide a comprehensive answer with sources.` }
+      ];
+      
+      let content = '';
+      for await (const token of openRouterClient.streamChat(messages, 'perplexity/sonar-pro')) {
+        content += token;
+      }
+      
+      // Extract URLs from response
+      const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
+      const urls = (content.match(urlRegex) || []).map(u => u.replace(/[.,;:!?)]+$/, ''));
+      
+      return res.json({ 
+        answer: content, 
+        citations: urls.slice(0, 10),
+        model: 'perplexity/sonar-pro'
+      });
     } catch (error) {
       console.error('Search error:', error);
       return res.status(500).json({ error: 'Failed to perform search' });

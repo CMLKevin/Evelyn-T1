@@ -68,6 +68,59 @@ interface SearchResult {
   timestamp: string;
 }
 
+// Artifact types for unified tool system (multi-file support)
+type ArtifactType = 'project' | 'react' | 'html' | 'python' | 'svg' | 'mermaid' | 'markdown';
+type ArtifactStatus = 'idle' | 'running' | 'building' | 'success' | 'error';
+type ArtifactFramework = 'react' | 'vue' | 'svelte' | 'vanilla' | 'python' | 'node';
+type FileLanguage = 
+  | 'typescript' | 'javascript' | 'tsx' | 'jsx'
+  | 'html' | 'css' | 'scss' | 'less'
+  | 'json' | 'yaml' | 'toml'
+  | 'python' | 'markdown' | 'plaintext';
+
+interface ArtifactFile {
+  id?: number;
+  path: string;
+  name: string;
+  language: FileLanguage;
+  content: string;
+  isEntryPoint: boolean;
+  isHidden: boolean;
+  isDirty?: boolean;
+}
+
+interface ArtifactState {
+  id: string;
+  type: ArtifactType;
+  title: string;
+  description?: string;
+  
+  // Single-file support
+  code?: string;
+  
+  // Multi-file project support
+  entryFile?: string;
+  framework?: ArtifactFramework;
+  files?: ArtifactFile[];
+  
+  // Preview and status
+  preview?: string;
+  status: ArtifactStatus;
+  output?: string;
+  error?: string;
+  
+  // Deployment
+  publishedUrl?: string;
+  publishedAt?: string;
+  
+  // Metadata
+  messageId?: number;
+  documentId?: number;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+}
+
 interface Personality {
   mood: { valence: number; arousal: number; stance: string };
 }
@@ -278,6 +331,39 @@ interface BrowsingResult {
 }
 
 // ========================================
+// AGENT PROGRESS INTERFACES (inline chat display)
+// ========================================
+
+type ToolCallStatus = 'pending' | 'running' | 'success' | 'error';
+
+interface ToolCall {
+  id: string;
+  tool: string;
+  params: Record<string, any>;
+  status: ToolCallStatus;
+  result?: any;
+  error?: string;
+  summary?: string;
+  startedAt?: string;
+  completedAt?: string;
+  durationMs?: number;
+}
+
+interface AgentProgress {
+  id: string;
+  status: 'thinking' | 'using_tools' | 'responding' | 'complete' | 'error';
+  thinking?: string;
+  toolCalls: ToolCall[];
+  response?: string;
+  startedAt: string;
+  completedAt?: string;
+  error?: string;
+  iteration?: number;
+  maxIterations?: number;
+  messageId?: number;
+}
+
+// ========================================
 // COLLABORATE FEATURE INTERFACES
 // ========================================
 
@@ -423,6 +509,84 @@ interface CollaborateFilters {
   folderId: number | null;
 }
 
+// Agentic Edit Session Types
+type AgenticEditPhase = 'idle' | 'detecting' | 'planning' | 'executing' | 'verifying' | 'complete' | 'error';
+
+interface AgenticIteration {
+  id: string;
+  step: number;
+  subGoalId?: string;
+  timestamp: number;
+  duration: number;
+  think: string;
+  structuredThought?: {
+    observation: string;
+    plan: string;
+    risk: 'low' | 'medium' | 'high';
+    toolChoice: string;
+    confidence: number;
+  };
+  toolCall?: {
+    tool: string;
+    params: Record<string, any>;
+  };
+  toolResult?: any;
+  goalStatus: 'in_progress' | 'achieved' | 'blocked';
+}
+
+interface AgenticSubGoal {
+  id: string;
+  description: string;
+  status: 'pending' | 'in_progress' | 'complete' | 'failed';
+  order: number;
+}
+
+interface AgenticEditPlan {
+  id: string;
+  overallGoal: { goal: string; approach: string };
+  subGoals: AgenticSubGoal[];
+  currentSubGoalId: string | null;
+  estimatedTotalSteps: number;
+  actualSteps: number;
+}
+
+interface AgenticEditCheckpoint {
+  id: string;
+  content: string;
+  description: string;
+  timestamp: number;
+  step: number;
+}
+
+interface AgenticEditSession {
+  editId: string | null;
+  documentId: number | null;
+  goal: string;
+  approach: string;
+  estimatedSteps: number;
+  phase: AgenticEditPhase;
+  progress: number;
+  currentStep: number;
+  totalSteps: number;
+  message: string;
+  currentSubGoal: string | null;
+  iterations: AgenticIteration[];
+  plan: AgenticEditPlan | null;
+  checkpoints: AgenticEditCheckpoint[];
+  currentThinking: string | null;
+  currentToolCall: any | null;
+  currentToolResult: any | null;
+  diff: { linesAdded: number; linesRemoved: number; hunks: any[] } | null;
+  startTime: number | null;
+  endTime: number | null;
+  duration: number | null;
+  success: boolean | null;
+  error: string | null;
+  errorRecoverable: boolean;
+  errorSuggestion: string | null;
+  isActive: boolean;
+}
+
 interface CollaborateState {
   activeDocument: CollaborateDocument | null;
   documentList: CollaborateDocument[];
@@ -440,10 +604,16 @@ interface CollaborateState {
   lastSaved: string | null;
   agentTask: CollaborateAgentTaskSession | null;
   lastIntentDetection: CollaborateIntentDetection | null;
+  // Agentic Edit Session
+  agenticEditSession: AgenticEditSession;
   // Document organization
   folders: CollaborateFolder[];
   filters: CollaborateFilters;
   allTags: string[];
+  // Streaming state - moved from ws.ts local variable for visibility
+  streamingMessage: string;
+  streamingStartTime: number | null;
+  isStreaming: boolean;
 }
 
 interface LogEntry {
@@ -482,12 +652,21 @@ interface Store {
   beliefEvents: BeliefEvent[];
   goalEvents: GoalEvent[];
   showDiagnostics: boolean;
+  agenticMode: boolean;  // Enable/disable agentic features (tools, artifacts, web search)
   error: string | null;
   dreamStatus: any;
   contextUsage: ContextUsage | null;
   contextSnapshot: ContextSnapshot | null;
   agentSession: AgentSession;
   browsingResults: BrowsingResult[];
+  
+  // Agent progress state (inline in chat)
+  agentProgress: AgentProgress | null;
+  
+  // Artifacts state
+  artifacts: ArtifactState[];
+  activeArtifact: ArtifactState | null;
+  artifactPanelOpen: boolean;
   
   // Collaborate state
   collaborateState: CollaborateState;
@@ -520,6 +699,8 @@ interface Store {
   setPersona: (persona: FullPersona) => void;
   setEvolutionEvents: (events: PersonaEvolutionEvent[]) => void;
   toggleDiagnostics: () => void;
+  setAgenticMode: (enabled: boolean) => void;
+  toggleAgenticMode: () => void;
   setError: (error: string | null) => void;
   updateDreamStatus: (status: any) => void;
   updateContextUsage: (usage: Omit<ContextUsage, 'timestamp'>) => void;
@@ -543,6 +724,23 @@ interface Store {
   setAgentError: (data: any) => void;
   resetAgentSession: () => void;
   addBrowsingResult: (result: BrowsingResult) => void;
+  
+  // Artifact actions
+  addArtifact: (artifact: ArtifactState) => void;
+  updateArtifact: (id: string, updates: Partial<ArtifactState>) => void;
+  removeArtifact: (id: string) => void;
+  setActiveArtifact: (artifact: ArtifactState | null) => void;
+  setArtifactPanelOpen: (open: boolean) => void;
+  runArtifact: (id: string) => void;
+  
+  // Agent progress actions (inline chat display)
+  startAgentProgress: (id: string) => void;
+  updateAgentThinking: (thinking: string) => void;
+  addAgentToolCall: (toolCall: ToolCall) => void;
+  updateAgentToolCall: (toolId: string, updates: Partial<ToolCall>) => void;
+  setAgentStatus: (status: AgentProgress['status']) => void;
+  completeAgentProgress: (messageId?: number) => void;
+  clearAgentProgress: () => void;
   
   // Logs actions
   addLogEntry: (entry: LogEntry) => void;
@@ -609,6 +807,21 @@ interface Store {
   setCollaborateAgentTask: (task: CollaborateAgentTaskSession | null) => void;
   setCollaborateIntentDetection: (intent: CollaborateIntentDetection | null) => void;
   
+  // Agentic Edit Session actions
+  setAgenticEditSession: (session: Partial<AgenticEditSession>) => void;
+  updateAgenticEditProgress: (progress: Partial<Pick<AgenticEditSession, 'phase' | 'progress' | 'currentStep' | 'totalSteps' | 'message' | 'currentSubGoal'>>) => void;
+  updateAgenticEditThinking: (thinking: string, structuredThought?: any) => void;
+  addAgenticEditIteration: (iteration: AgenticIteration) => void;
+  updateAgenticEditToolCall: (toolCall: any) => void;
+  updateAgenticEditToolResult: (result: any) => void;
+  updateAgenticEditDiff: (diff: { linesAdded: number; linesRemoved: number; hunks?: any[] }) => void;
+  addAgenticEditCheckpoint: (checkpoint: AgenticEditCheckpoint) => void;
+  setAgenticEditPlan: (plan: AgenticEditPlan) => void;
+  updateAgenticSubGoal: (subGoalId: string, status: string) => void;
+  completeAgenticEdit: (result: { success: boolean; summary: string; changesCount: number; iterationsCount: number; duration: number }) => void;
+  setAgenticEditError: (error: string, recoverable?: boolean, suggestion?: string) => void;
+  resetAgenticEditSession: () => void;
+  
   // Load data
   loadCollaborateDocuments: () => Promise<void>;
   loadCollaborateDocument: (documentId: number) => Promise<void>;
@@ -638,6 +851,11 @@ interface Store {
   deleteCollaborateFolder: (folderId: number) => Promise<void>;
   setAllTags: (tags: string[]) => void;
   getFilteredDocuments: () => CollaborateDocument[];
+  // Streaming state actions
+  appendStreamingMessage: (token: string) => void;
+  startStreaming: () => void;
+  completeStreaming: () => string;
+  clearStreaming: () => void;
 }
 
 export const useStore = create<Store>((set, get) => ({
@@ -648,6 +866,15 @@ export const useStore = create<Store>((set, get) => ({
   activities: [],
   searchResults: [],
   browsingResults: [],
+  
+  // Agent progress state (inline in chat)
+  agentProgress: null,
+  
+  // Artifacts state
+  artifacts: [],
+  activeArtifact: null,
+  artifactPanelOpen: false,
+  
   agentSession: {
     sessionId: null,
     approved: false,
@@ -668,6 +895,7 @@ export const useStore = create<Store>((set, get) => ({
   beliefEvents: [],
   goalEvents: [],
   showDiagnostics: true,
+  agenticMode: true,  // Default: agentic features enabled
   error: null,
   dreamStatus: null,
   contextUsage: null,
@@ -714,6 +942,35 @@ export const useStore = create<Store>((set, get) => ({
     lastSaved: null,
     agentTask: null,
     lastIntentDetection: null,
+    // Agentic Edit Session
+    agenticEditSession: {
+      editId: null,
+      documentId: null,
+      goal: '',
+      approach: '',
+      estimatedSteps: 0,
+      phase: 'idle',
+      progress: 0,
+      currentStep: 0,
+      totalSteps: 0,
+      message: '',
+      currentSubGoal: null,
+      iterations: [],
+      plan: null,
+      checkpoints: [],
+      currentThinking: null,
+      currentToolCall: null,
+      currentToolResult: null,
+      diff: null,
+      startTime: null,
+      endTime: null,
+      duration: null,
+      success: null,
+      error: null,
+      errorRecoverable: false,
+      errorSuggestion: null,
+      isActive: false,
+    },
     // Document organization
     folders: [],
     filters: {
@@ -726,6 +983,10 @@ export const useStore = create<Store>((set, get) => ({
       folderId: null,
     },
     allTags: [],
+    // Streaming state
+    streamingMessage: '',
+    streamingStartTime: null,
+    isStreaming: false,
   },
 
   setConnected: (connected) => set({ connected }),
@@ -879,6 +1140,23 @@ export const useStore = create<Store>((set, get) => ({
   toggleDiagnostics: () => set((state) => ({
     showDiagnostics: !state.showDiagnostics
   })),
+
+  setAgenticMode: (enabled) => set({ agenticMode: enabled }),
+
+  toggleAgenticMode: () => {
+    set((state) => {
+      const newMode = !state.agenticMode;
+
+      // Persist to server (fire and forget)
+      fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agenticMode: newMode })
+      }).catch(console.error);
+
+      return { agenticMode: newMode };
+    });
+  },
 
   setError: (error) => set({ error }),
   
@@ -1088,6 +1366,97 @@ export const useStore = create<Store>((set, get) => ({
   addBrowsingResult: (result) => set((state) => ({
     browsingResults: [...state.browsingResults, result]
   })),
+
+  // Artifact actions
+  addArtifact: (artifact) => set((state) => ({
+    artifacts: [...state.artifacts, artifact],
+    activeArtifact: artifact,
+    artifactPanelOpen: true
+  })),
+
+  updateArtifact: (id, updates) => set((state) => ({
+    artifacts: state.artifacts.map(a => 
+      a.id === id ? { ...a, ...updates, updatedAt: new Date().toISOString() } : a
+    ),
+    activeArtifact: state.activeArtifact?.id === id 
+      ? { ...state.activeArtifact, ...updates, updatedAt: new Date().toISOString() } 
+      : state.activeArtifact
+  })),
+
+  removeArtifact: (id) => set((state) => ({
+    artifacts: state.artifacts.filter(a => a.id !== id),
+    activeArtifact: state.activeArtifact?.id === id ? null : state.activeArtifact,
+    artifactPanelOpen: state.activeArtifact?.id === id ? false : state.artifactPanelOpen
+  })),
+
+  setActiveArtifact: (artifact) => set({
+    activeArtifact: artifact,
+    artifactPanelOpen: artifact !== null
+  }),
+
+  setArtifactPanelOpen: (open) => set({ artifactPanelOpen: open }),
+
+  runArtifact: (id) => set((state) => ({
+    artifacts: state.artifacts.map(a => 
+      a.id === id ? { ...a, status: 'running' as const, output: undefined, error: undefined } : a
+    ),
+    activeArtifact: state.activeArtifact?.id === id 
+      ? { ...state.activeArtifact, status: 'running' as const, output: undefined, error: undefined } 
+      : state.activeArtifact
+  })),
+
+  // Agent progress actions (inline chat display)
+  startAgentProgress: (id) => set({
+    agentProgress: {
+      id,
+      status: 'thinking',
+      toolCalls: [],
+      startedAt: new Date().toISOString()
+    }
+  }),
+
+  updateAgentThinking: (thinking) => set((state) => ({
+    agentProgress: state.agentProgress ? {
+      ...state.agentProgress,
+      thinking,
+      status: 'thinking'
+    } : null
+  })),
+
+  addAgentToolCall: (toolCall) => set((state) => ({
+    agentProgress: state.agentProgress ? {
+      ...state.agentProgress,
+      toolCalls: [...state.agentProgress.toolCalls, toolCall],
+      status: 'using_tools'
+    } : null
+  })),
+
+  updateAgentToolCall: (toolId, updates) => set((state) => ({
+    agentProgress: state.agentProgress ? {
+      ...state.agentProgress,
+      toolCalls: state.agentProgress.toolCalls.map(t =>
+        t.id === toolId ? { ...t, ...updates } : t
+      )
+    } : null
+  })),
+
+  setAgentStatus: (status) => set((state) => ({
+    agentProgress: state.agentProgress ? {
+      ...state.agentProgress,
+      status
+    } : null
+  })),
+
+  completeAgentProgress: (messageId) => set((state) => ({
+    agentProgress: state.agentProgress ? {
+      ...state.agentProgress,
+      status: 'complete',
+      completedAt: new Date().toISOString(),
+      messageId
+    } : null
+  })),
+
+  clearAgentProgress: () => set({ agentProgress: null }),
 
   resetAgentSession: () => set({
     agentSession: {
@@ -1528,6 +1897,197 @@ export const useStore = create<Store>((set, get) => ({
       lastIntentDetection: intent
     }
   })),
+
+  // ========================================
+  // Agentic Edit Session Actions
+  // ========================================
+  
+  setAgenticEditSession: (session) => set((state) => ({
+    collaborateState: {
+      ...state.collaborateState,
+      agenticEditSession: {
+        ...state.collaborateState.agenticEditSession,
+        ...session,
+      }
+    }
+  })),
+
+  updateAgenticEditProgress: (progress) => set((state) => {
+    const current = state.collaborateState.agenticEditSession;
+    return {
+      collaborateState: {
+        ...state.collaborateState,
+        agenticEditSession: {
+          ...current,
+          ...progress,
+          // Lock totalSteps once set - prevent progress bar regression
+          totalSteps: current.totalSteps > 0 ? current.totalSteps : (progress.totalSteps ?? current.totalSteps),
+          // Ensure currentStep only goes forward
+          currentStep: Math.max(current.currentStep, progress.currentStep ?? current.currentStep),
+        }
+      }
+    };
+  }),
+
+  updateAgenticEditThinking: (thinking, structuredThought) => set((state) => ({
+    collaborateState: {
+      ...state.collaborateState,
+      agenticEditSession: {
+        ...state.collaborateState.agenticEditSession,
+        currentThinking: thinking,
+        // Update the last iteration's structured thought if exists
+      }
+    }
+  })),
+
+  addAgenticEditIteration: (iteration) => set((state) => ({
+    collaborateState: {
+      ...state.collaborateState,
+      agenticEditSession: {
+        ...state.collaborateState.agenticEditSession,
+        iterations: [...state.collaborateState.agenticEditSession.iterations, iteration],
+        currentStep: iteration.step,
+      }
+    }
+  })),
+
+  updateAgenticEditToolCall: (toolCall) => set((state) => ({
+    collaborateState: {
+      ...state.collaborateState,
+      agenticEditSession: {
+        ...state.collaborateState.agenticEditSession,
+        currentToolCall: toolCall,
+      }
+    }
+  })),
+
+  updateAgenticEditToolResult: (result) => set((state) => ({
+    collaborateState: {
+      ...state.collaborateState,
+      agenticEditSession: {
+        ...state.collaborateState.agenticEditSession,
+        currentToolResult: result,
+      }
+    }
+  })),
+
+  updateAgenticEditDiff: (diff) => set((state) => ({
+    collaborateState: {
+      ...state.collaborateState,
+      agenticEditSession: {
+        ...state.collaborateState.agenticEditSession,
+        diff: {
+          linesAdded: diff.linesAdded,
+          linesRemoved: diff.linesRemoved,
+          hunks: diff.hunks || [],
+        },
+      }
+    }
+  })),
+
+  addAgenticEditCheckpoint: (checkpoint) => set((state) => ({
+    collaborateState: {
+      ...state.collaborateState,
+      agenticEditSession: {
+        ...state.collaborateState.agenticEditSession,
+        checkpoints: [...state.collaborateState.agenticEditSession.checkpoints, checkpoint],
+      }
+    }
+  })),
+
+  setAgenticEditPlan: (plan) => set((state) => ({
+    collaborateState: {
+      ...state.collaborateState,
+      agenticEditSession: {
+        ...state.collaborateState.agenticEditSession,
+        plan,
+      }
+    }
+  })),
+
+  updateAgenticSubGoal: (subGoalId, status) => set((state) => {
+    const plan = state.collaborateState.agenticEditSession.plan;
+    if (!plan) return state;
+    
+    return {
+      collaborateState: {
+        ...state.collaborateState,
+        agenticEditSession: {
+          ...state.collaborateState.agenticEditSession,
+          plan: {
+            ...plan,
+            subGoals: plan.subGoals.map(sg => 
+              sg.id === subGoalId ? { ...sg, status: status as any } : sg
+            ),
+            currentSubGoalId: status === 'in_progress' ? subGoalId : plan.currentSubGoalId,
+          }
+        }
+      }
+    };
+  }),
+
+  completeAgenticEdit: (result) => set((state) => ({
+    collaborateState: {
+      ...state.collaborateState,
+      agenticEditSession: {
+        ...state.collaborateState.agenticEditSession,
+        phase: result.success ? 'complete' : 'error',
+        success: result.success,
+        duration: result.duration,
+        endTime: Date.now(),
+        isActive: false,
+        message: result.summary,
+      }
+    }
+  })),
+
+  setAgenticEditError: (error, recoverable = false, suggestion) => set((state) => ({
+    collaborateState: {
+      ...state.collaborateState,
+      agenticEditSession: {
+        ...state.collaborateState.agenticEditSession,
+        phase: 'error',
+        error,
+        errorRecoverable: recoverable,
+        errorSuggestion: suggestion || null,
+        isActive: false,
+      }
+    }
+  })),
+
+  resetAgenticEditSession: () => set((state) => ({
+    collaborateState: {
+      ...state.collaborateState,
+      agenticEditSession: {
+        editId: null,
+        documentId: null,
+        goal: '',
+        approach: '',
+        estimatedSteps: 0,
+        phase: 'idle',
+        progress: 0,
+        currentStep: 0,
+        totalSteps: 0,
+        message: '',
+        currentSubGoal: null,
+        iterations: [],
+        plan: null,
+        checkpoints: [],
+        currentThinking: null,
+        currentToolCall: null,
+        currentToolResult: null,
+        diff: null,
+        startTime: null,
+        endTime: null,
+        duration: null,
+        success: null,
+        error: null,
+        errorRecoverable: false,
+        errorSuggestion: null,
+        isActive: false,
+      }
+    }
+  })),
   
   // Load data
 
@@ -1932,7 +2492,53 @@ export const useStore = create<Store>((set, get) => ({
       collaborateState: { ...state.collaborateState, allTags: tags }
     }));
   },
-  
+
+  // Streaming state actions - moved from ws.ts for visibility and reliability
+  appendStreamingMessage: (token) => {
+    set((state) => ({
+      collaborateState: {
+        ...state.collaborateState,
+        streamingMessage: state.collaborateState.streamingMessage + token,
+      }
+    }));
+  },
+
+  startStreaming: () => {
+    set((state) => ({
+      collaborateState: {
+        ...state.collaborateState,
+        streamingMessage: '',
+        streamingStartTime: Date.now(),
+        isStreaming: true,
+      }
+    }));
+  },
+
+  completeStreaming: () => {
+    const state = get();
+    const message = state.collaborateState.streamingMessage.trim();
+    set((state) => ({
+      collaborateState: {
+        ...state.collaborateState,
+        streamingMessage: '',
+        streamingStartTime: null,
+        isStreaming: false,
+      }
+    }));
+    return message;
+  },
+
+  clearStreaming: () => {
+    set((state) => ({
+      collaborateState: {
+        ...state.collaborateState,
+        streamingMessage: '',
+        streamingStartTime: null,
+        isStreaming: false,
+      }
+    }));
+  },
+
   getFilteredDocuments: () => {
     const state = get();
     const { documentList, filters } = state.collaborateState;

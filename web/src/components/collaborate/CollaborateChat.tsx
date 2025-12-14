@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect, KeyboardEvent } from 'react';
 import { useStore } from '../../state/store';
-import { Send, ChevronLeft, MessageSquare, Sparkles, X, CheckCircle2, AlertCircle, Clock, Copy, ThumbsUp, ThumbsDown, RefreshCw, ChevronDown, Lightbulb, Code2, Check } from 'lucide-react';
+import { Send, ChevronLeft, MessageSquare, Sparkles, X, Copy, ThumbsUp, ThumbsDown, ChevronDown, Lightbulb, Check } from 'lucide-react';
 import { formatDistanceToNow, format } from 'date-fns';
 import { wsClient } from '../../lib/ws';
-import AgenticEditProgress from './AgenticEditProgress';
+import AgenticProgress from './AgenticProgress';
 
 export default function CollaborateChat() {
   const { 
@@ -19,18 +19,31 @@ export default function CollaborateChat() {
   const [isTyping, setIsTyping] = useState(false);
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [feedbackGiven, setFeedbackGiven] = useState<Record<string, 'up' | 'down'>>({});
+  const [isScrollLocked, setIsScrollLocked] = useState(false);
+  const [hasNewMessages, setHasNewMessages] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const prevMessageCountRef = useRef(0);
 
-  const { activeDocument, chatMessages, agentTask } = collaborateState;
+  const { activeDocument, chatMessages, agenticEditSession } = collaborateState;
 
-  // Auto-scroll to bottom when new messages arrive
+  // Smart auto-scroll: only scroll if user is near bottom
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [chatMessages]);
+    const isNewMessage = chatMessages.length > prevMessageCountRef.current;
+    prevMessageCountRef.current = chatMessages.length;
 
-  // Detect scroll position for scroll-to-bottom button
+    if (isNewMessage) {
+      if (!isScrollLocked) {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      } else {
+        setHasNewMessages(true);
+      }
+    }
+  }, [chatMessages, isScrollLocked]);
+
+  // Detect scroll position for scroll-to-bottom button and scroll lock
   useEffect(() => {
     const container = messagesContainerRef.current;
     if (!container) return;
@@ -39,16 +52,33 @@ export default function CollaborateChat() {
       const { scrollTop, scrollHeight, clientHeight } = container;
       const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
       setShowScrollButton(!isNearBottom && chatMessages.length > 0);
+      setIsScrollLocked(!isNearBottom);
+      if (isNearBottom) {
+        setHasNewMessages(false);
+      }
     };
 
     container.addEventListener('scroll', handleScroll);
     return () => container.removeEventListener('scroll', handleScroll);
   }, [chatMessages.length]);
 
-  // Simulate typing indicator (would be triggered by WebSocket in production)
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: globalThis.KeyboardEvent) => {
+      // Escape to collapse chat
+      if (e.key === 'Escape' && !isCollapsed) {
+        setIsCollapsed(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isCollapsed]);
+
+  // Typing indicator with reduced delay (100ms instead of 500ms)
   useEffect(() => {
     if (isSending) {
-      const timer = setTimeout(() => setIsTyping(true), 500);
+      const timer = setTimeout(() => setIsTyping(true), 100);
       return () => clearTimeout(timer);
     } else {
       setIsTyping(false);
@@ -63,6 +93,15 @@ export default function CollaborateChat() {
     navigator.clipboard.writeText(content);
     setCopiedMessageId(messageId);
     setTimeout(() => setCopiedMessageId(null), 2000);
+  };
+
+  const handleFeedback = (messageId: string, rating: 'up' | 'down') => {
+    // Prevent duplicate feedback
+    if (feedbackGiven[messageId]) return;
+
+    setFeedbackGiven(prev => ({ ...prev, [messageId]: rating }));
+    // Could send to server here via wsClient.sendFeedback(messageId, rating)
+    console.log(`[CollaborateChat] Feedback for message ${messageId}: ${rating}`);
   };
 
   const handleQuickAction = (prompt: string) => {
@@ -166,7 +205,7 @@ export default function CollaborateChat() {
             <button
               onClick={handleRunAgentTask}
               className="px-3 py-1.5 text-xs bg-orange/10 border-2 border-orange text-orange hover:bg-orange/20 hover:border-orange transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed font-mono font-medium uppercase"
-              disabled={!!agentTask && ['planning', 'editing', 'applying_edits'].includes(agentTask.status)}
+              disabled={agenticEditSession.isActive || ['planning', 'executing', 'verifying'].includes(agenticEditSession.phase)}
             >
               Let Evelyn Edit
             </button>
@@ -183,84 +222,8 @@ export default function CollaborateChat() {
 
       {/* Messages */}
       <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-5 py-6 space-y-6 terminal-scrollbar relative">
-        {/* Agentic Code Editor Progress */}
-        {activeDocument && (() => {
-          // Find the most recent code_edit activity (running, done, or error)
-          const codeEditActivities = activities.filter(a => 
-            a.tool === 'code_edit' && 
-            (a.status === 'running' || a.status === 'done' || a.status === 'error')
-          );
-          // Get the most recent one (last in array)
-          const codeEditActivity = codeEditActivities[codeEditActivities.length - 1];
-          
-          // Debug logging
-          console.log('[CollaborateChat] All activities:', activities.length);
-          console.log('[CollaborateChat] Code edit activities:', codeEditActivities.length);
-          if (codeEditActivity) {
-            console.log('[CollaborateChat] Rendering agentic editor:', codeEditActivity);
-          }
-          
-          return codeEditActivity ? <AgenticEditProgress activity={codeEditActivity as any} /> : null;
-        })()}
-
-        {activeDocument && agentTask && (
-          <div className="animate-fade-in-down mb-4">
-            <div className="px-4 py-3 bg-orange/5 border-2 border-orange">
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <div className="flex items-center gap-2">
-                  <div className="relative">
-                    {agentTask.status === 'complete' ? (
-                      <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                    ) : agentTask.status === 'error' ? (
-                      <AlertCircle className="w-4 h-4 text-red-400" />
-                    ) : (
-                      <Clock className="w-4 h-4 text-orange animate-pulse" />
-                    )}
-                  </div>
-                  <span className="text-white text-sm font-medium">
-                    {agentTask.status === 'complete' ? 'Task Complete' : 'Evelyn is working'}
-                  </span>
-                </div>
-                <span className="px-2 py-0.5 text-[10px] font-mono font-medium uppercase tracking-wider bg-terminal-900 border border-white/20 text-terminal-300">
-                  {agentTask.status === 'planning' && 'Planning'}
-                  {agentTask.status === 'editing' && 'Editing'}
-                  {agentTask.status === 'applying_edits' && 'Applying'}
-                  {agentTask.status === 'complete' && 'Done'}
-                  {agentTask.status === 'error' && 'Error'}
-                </span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {agentTask.steps.map((step) => (
-                  <div
-                    key={step.id}
-                    className={`px-3 py-1 text-xs font-mono font-medium flex items-center gap-1.5 transition-colors duration-150 ${
-                      step.status === 'done'
-                        ? 'bg-green-500/10 border border-green-500 text-green-500'
-                        : step.status === 'running'
-                        ? 'bg-orange/10 border border-orange text-orange'
-                        : step.status === 'error'
-                        ? 'bg-red-500/10 border border-red-500 text-red-500'
-                        : 'bg-terminal-900 border border-white/20 text-terminal-400'
-                    }`}
-                  >
-                    {step.status === 'running' && (
-                      <span className="w-1.5 h-1.5 bg-orange animate-pulse" />
-                    )}
-                    {step.status === 'done' && (
-                      <CheckCircle2 className="w-3 h-3" />
-                    )}
-                    <span>{step.label}</span>
-                  </div>
-                ))}
-              </div>
-              {agentTask.error && (
-                <div className="mt-3 px-3 py-2 bg-red-500/10 border border-red-500 text-red-500 text-xs font-mono">
-                  {agentTask.error}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        {/* Agentic Code Editor Progress - single unified progress display */}
+        {activeDocument && <AgenticProgress />}
 
         {activeDocument && collaborateState.lastIntentDetection && (
           <div className="mb-4 animate-fade-in-down">
@@ -393,16 +356,36 @@ export default function CollaborateChat() {
                       )}
                     </button>
                     <button
-                      className="p-1.5 bg-terminal-900 hover:bg-terminal-800 border border-white/20 hover:border-green-500 transition-colors duration-150 group/btn"
+                      onClick={() => handleFeedback(String(msg.id ?? msg.messageIndex ?? idx), 'up')}
+                      className={`p-1.5 border transition-colors duration-150 group/btn ${
+                        feedbackGiven[String(msg.id ?? msg.messageIndex ?? idx)] === 'up'
+                          ? 'bg-emerald-500/20 border-emerald-500'
+                          : 'bg-terminal-900 hover:bg-terminal-800 border-white/20 hover:border-green-500'
+                      }`}
                       title="Good response"
+                      disabled={!!feedbackGiven[String(msg.id ?? msg.messageIndex ?? idx)]}
                     >
-                      <ThumbsUp className="w-3.5 h-3.5 text-zinc-400 group-hover/btn:text-emerald-400 transition-colors" />
+                      <ThumbsUp className={`w-3.5 h-3.5 transition-colors ${
+                        feedbackGiven[String(msg.id ?? msg.messageIndex ?? idx)] === 'up'
+                          ? 'text-emerald-400'
+                          : 'text-zinc-400 group-hover/btn:text-emerald-400'
+                      }`} />
                     </button>
                     <button
-                      className="p-1.5 bg-terminal-900 hover:bg-terminal-800 border border-white/20 hover:border-red-500 transition-colors duration-150 group/btn"
+                      onClick={() => handleFeedback(String(msg.id ?? msg.messageIndex ?? idx), 'down')}
+                      className={`p-1.5 border transition-colors duration-150 group/btn ${
+                        feedbackGiven[String(msg.id ?? msg.messageIndex ?? idx)] === 'down'
+                          ? 'bg-red-500/20 border-red-500'
+                          : 'bg-terminal-900 hover:bg-terminal-800 border-white/20 hover:border-red-500'
+                      }`}
                       title="Bad response"
+                      disabled={!!feedbackGiven[String(msg.id ?? msg.messageIndex ?? idx)]}
                     >
-                      <ThumbsDown className="w-3.5 h-3.5 text-zinc-400 group-hover/btn:text-red-400 transition-colors" />
+                      <ThumbsDown className={`w-3.5 h-3.5 transition-colors ${
+                        feedbackGiven[String(msg.id ?? msg.messageIndex ?? idx)] === 'down'
+                          ? 'text-red-400'
+                          : 'text-zinc-400 group-hover/btn:text-red-400'
+                      }`} />
                     </button>
                   </div>
                 )}
@@ -429,6 +412,14 @@ export default function CollaborateChat() {
         
         <div ref={messagesEndRef} />
         
+        {/* New Messages Indicator */}
+        {hasNewMessages && isScrollLocked && (
+          <div className="absolute bottom-16 left-1/2 -translate-x-1/2 bg-orange/90 px-3 py-1.5 text-xs font-mono text-white z-10 animate-fade-in-up flex items-center gap-2">
+            <span>New messages below</span>
+            <ChevronDown className="w-3 h-3" />
+          </div>
+        )}
+
         {/* Scroll to Bottom Button */}
         {showScrollButton && (
           <button

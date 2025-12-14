@@ -11,7 +11,7 @@ const DiagnosticsPanel = lazy(() => import('./components/panels/DiagnosticsPanel
 const LogsPanel = lazy(() => import('./components/logs/LogsPanel'));
 const ContextPanel = lazy(() => import('./components/panels/ContextPanel'));
 const CollaboratePanel = lazy(() => import('./components/collaborate/CollaboratePanel'));
-const CommandPalette = lazy(() => import('./components/terminal/CommandPalette'));
+const CommandPalette = lazy(() => import('./components/shared/CommandPalette'));
 const QuickSearch = lazy(() => import('./components/terminal/QuickSearch'));
 const SettingsModal = lazy(() => import('./components/panels/SettingsModal'));
 
@@ -25,6 +25,11 @@ export default function App() {
     setCommandPaletteOpen,
     setQuickSearchOpen,
     setSettingsModalOpen,
+    // Artifact state
+    activeArtifact,
+    artifactPanelOpen,
+    setArtifactPanelOpen,
+    setActiveArtifact,
   } = useStore();
 
   useEffect(() => {
@@ -75,12 +80,31 @@ export default function App() {
       if (e.key === 'Escape') {
         setCommandPaletteOpen(false);
         setQuickSearchOpen(false);
+        // Also close artifact panel on Escape
+        if (artifactPanelOpen) {
+          setArtifactPanelOpen(false);
+        }
+      }
+
+      // Toggle artifact panel: Ctrl/Cmd + B
+      if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+        e.preventDefault();
+        if (activeArtifact) {
+          setArtifactPanelOpen(!artifactPanelOpen);
+        }
+      }
+
+      // Close artifact: Ctrl/Cmd + W (when artifact panel is focused)
+      if ((e.ctrlKey || e.metaKey) && e.key === 'w' && artifactPanelOpen) {
+        e.preventDefault();
+        setActiveArtifact(null);
+        setArtifactPanelOpen(false);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [artifactPanelOpen, activeArtifact, setArtifactPanelOpen, setActiveArtifact]);
 
   // Loading fallback component
   const LoadingFallback = () => (
@@ -142,7 +166,7 @@ export default function App() {
       {/* Global Modals - lazy loaded */}
       {uiState.commandPaletteOpen && (
         <Suspense fallback={null}>
-          <CommandPalette />
+          <CommandPalette onClose={() => setCommandPaletteOpen(false)} />
         </Suspense>
       )}
       {uiState.quickSearchOpen && (

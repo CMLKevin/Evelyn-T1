@@ -81,10 +81,10 @@ export class CollaborateErrorBoundary extends Component<Props, State> {
               Your document changes should be saved, but you may need to refresh.
             </p>
 
-            {/* Error Details (collapsible) */}
-            <details className="mb-6 text-left">
+            {/* Error Details (open by default for better debugging) */}
+            <details className="mb-6 text-left" open>
               <summary className="text-xs text-terminal-500 cursor-pointer hover:text-terminal-400 transition-colors">
-                Show error details
+                Error details
               </summary>
               <div className="mt-3 p-3 bg-black border border-red-500/30 overflow-auto max-h-40">
                 <pre className="text-xs text-red-400 whitespace-pre-wrap font-mono">

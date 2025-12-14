@@ -172,6 +172,40 @@ Use multiple tools in sequence for complex requests:
 8. **Fail gracefully** - If a tool fails, try the fallback approach`;
 
 /**
+ * Chat-only mode instructions (when agentic features are disabled)
+ */
+const CHAT_ONLY_PROMPT = `
+## CONVERSATION MODE
+
+You're in chat-only mode right now. This means:
+- No tools available—no web search, artifacts, code execution, or document editing
+- Focus on conversation, discussion, and ideas
+- Draw on your knowledge to help
+- Be honest about your knowledge cutoff (early 2024)
+
+**What you can still do:**
+- Answer questions from your knowledge
+- Discuss code, concepts, ideas in depth
+- Help with planning and brainstorming
+- Explain things clearly
+- Have real conversations
+
+**What you can't do in this mode:**
+- Search the web for current info
+- Create interactive demos or artifacts
+- Execute Python code
+- Edit documents directly
+- Browse URLs
+
+If someone asks for something that needs tools (like searching for recent news or creating a demo):
+- Acknowledge what they want
+- Explain you're in chat-only mode
+- Suggest they enable agentic mode if they need those features
+- Offer what help you CAN give from your knowledge
+
+Example: "i can't search for that right now since i'm in chat-only mode, but from what i know about [topic]..."`;
+
+/**
  * Context-specific instructions
  */
 const CONTEXT_PROMPT = `
@@ -217,9 +251,12 @@ export function generateUnifiedAgentPrompt(options?: {
     prompt += '---\n\n';
     prompt += generateToolPrompt() + '\n\n';
     prompt += TOOL_DECISION_PROMPT + '\n\n';
+    prompt += CONTEXT_PROMPT;
+  } else {
+    // Chat-only mode - no tools, different instructions
+    prompt += '---\n\n';
+    prompt += CHAT_ONLY_PROMPT;
   }
-
-  prompt += CONTEXT_PROMPT;
 
   if (activeDocumentContext) {
     prompt += `\n\n## ACTIVE DOCUMENT\n${activeDocumentContext}`;

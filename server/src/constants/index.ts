@@ -11,19 +11,22 @@
 
 export const MODELS = {
   /** Primary chat model */
-  CHAT: 'x-ai/grok-4.1-fast',
+  CHAT: 'x-ai/grok-4.1-fast:free',
   
   /** Simple thinking tasks */
-  THINK_SIMPLE: 'x-ai/grok-4.1-fast',
+  THINK_SIMPLE: 'x-ai/grok-4.1-fast:free',
   
   /** Complex reasoning tasks */
-  THINK_COMPLEX: 'x-ai/grok-4.1-fast',
+  THINK_COMPLEX: 'x-ai/grok-4.1-fast:free',
   
   /** Agentic tasks */
-  AGENT: 'x-ai/grok-4.1-fast',
+  AGENT: 'x-ai/grok-4.1-fast:free',
+  
+  /** Fallback model for rate limiting */
+  FALLBACK: 'moonshotai/kimi-k2-thinking',
   
   /** Text embeddings */
-  EMBEDDING: 'openai/text-embedding-3-small',
+  EMBEDDING: 'qwen/qwen3-embedding-8b',
   
   /** Vision tasks */
   VISION: 'openai/gpt-4o',
@@ -335,6 +338,51 @@ export const ERROR_CODES = {
 export type ErrorCode = typeof ERROR_CODES[keyof typeof ERROR_CODES];
 
 // ========================================
+// Grok Agent Tools Configuration
+// ========================================
+
+export const GROK_AGENT_TOOLS = {
+  /** Model that supports agent tools */
+  MODEL: 'x-ai/grok-4.1-fast:free',
+  
+  /** Available tool types */
+  TOOL_TYPES: {
+    WEB_SEARCH: 'web_search',
+    X_SEARCH: 'x_search',
+    CODE_EXECUTION: 'code_execution',
+    COLLECTIONS_SEARCH: 'collections_search',
+    MCP: 'mcp',
+    FUNCTION: 'function',
+  },
+  
+  /** Tool choice options */
+  TOOL_CHOICE: {
+    AUTO: 'auto',       // Let Grok decide when to use tools
+    NONE: 'none',       // Disable tool usage
+    REQUIRED: 'required', // Force tool usage
+  },
+  
+  /** Preset tool combinations */
+  PRESETS: {
+    /** All tools enabled */
+    ALL: ['web_search', 'x_search', 'code_execution', 'collections_search'],
+    /** Research tasks */
+    RESEARCH: ['web_search', 'x_search'],
+    /** Coding/math tasks */
+    CODE: ['code_execution'],
+    /** Web + Code combination */
+    WEB_CODE: ['web_search', 'code_execution'],
+  },
+  
+  /** Timeouts for agent tasks */
+  TIMEOUTS: {
+    SIMPLE_MS: 60000,      // 1 minute for simple queries
+    STANDARD_MS: 120000,   // 2 minutes for standard tasks
+    RESEARCH_MS: 180000,   // 3 minutes for deep research
+  },
+} as const;
+
+// ========================================
 // Export All
 // ========================================
 
@@ -343,19 +391,29 @@ export type ErrorCode = typeof ERROR_CODES[keyof typeof ERROR_CODES];
 // ========================================
 
 export const COLLABORATE_CONFIG = {
-  // Agentic editing
+  // Engine selection
+  // Agentic editing configuration
   AGENTIC_EDIT: {
-    MAX_ITERATIONS: 10,
-    ITERATION_TIMEOUT_MS: 90000,    // 90 seconds per iteration
-    TOTAL_TIMEOUT_MS: 300000,       // 5 minutes total
+    MAX_ITERATIONS: 12,             // Max iterations per edit
+    ITERATION_TIMEOUT_MS: 240000,   // 4 minutes per iteration (generous for long code generation)
+    TOTAL_TIMEOUT_MS: 900000,       // 15 minutes total
     MAX_DOCUMENT_SIZE: 100000,      // 100KB
     INTENT_TRUNCATION_LIMIT: 4000,  // Chars for intent detection
+    TOKEN_BUDGET: 20000,            // Max tokens per prompt
+    MAX_CONTEXT_LINES: 150,         // Smart windowing
+    ENABLE_CHECKPOINTS: true,       // Rollback support
+    STREAM_RESPONSES: true,         // Enable streaming
+    EARLY_TERMINATION: true,        // Allow early completion
   },
   
   // Intent detection
   INTENT: {
     CONFIDENCE_THRESHOLD: 0.6,      // Minimum confidence to trigger edit
+    AUTO_TRIGGER_THRESHOLD: 0.90,   // Confidence needed for auto-trigger (no confirmation)
     MAX_CONTEXT_MESSAGES: 5,        // Recent messages for context
+    ENABLE_PATTERN_MATCHING: true,  // Use fast pattern matching before LLM
+    ENABLE_CONTEXTUAL_ANALYSIS: true, // Consider conversation history
+    LLM_TIMEOUT_MS: 20000,          // Timeout for LLM intent detection
   },
   
   // WebSocket
@@ -396,5 +454,6 @@ export default {
   TEMPORAL_CONFIG,
   PIPELINE_CONFIG,
   ERROR_CODES,
+  GROK_AGENT_TOOLS,
   COLLABORATE_CONFIG,
 };

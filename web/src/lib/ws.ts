@@ -56,9 +56,9 @@ class WSClient {
   private lastSentMessage: string = '';
   private lastSentTime: number = 0;
 
-  // Collaborate chat streaming buffer (separate from main chat)
-  private collaborateStreamingMessage: string = '';
-  
+  // Note: Collaborate streaming buffer moved to store for visibility and reliability
+  // Use store.appendStreamingMessage(), store.completeStreaming(), etc.
+
   // Active timeouts for cleanup
   private activeTimeouts: Map<string, NodeJS.Timeout> = new Map();
 
@@ -132,6 +132,13 @@ class WSClient {
       useStore.getState().setConnected(true);
     });
 
+    // DEBUG: Log ALL incoming events to diagnose agentic event issues
+    this.socket.onAny((eventName: string, ...args: any[]) => {
+      if (eventName.startsWith('agentic:')) {
+        console.log(`[WS] 🔴 RECEIVED agentic event: ${eventName}`, args[0]?.editId || args[0]);
+      }
+    });
+
     this.socket.on('disconnect', () => {
       console.log('Disconnected from server');
       this.isConnecting = false;
@@ -145,9 +152,10 @@ class WSClient {
 
     // Batch token updates for performance
     this.socket.on('chat:token', (token: string) => {
-      // If a collaborate chat is active, stream tokens into a separate buffer
-      if (this.collaborateStreamingMessage !== '') {
-        this.collaborateStreamingMessage += token;
+      // If a collaborate chat is active, stream tokens into the store
+      const store = useStore.getState();
+      if (store.collaborateState.isStreaming) {
+        store.appendStreamingMessage(token);
         return;
       }
 
@@ -190,6 +198,141 @@ class WSClient {
     this.socket.on('subroutine:status', (data: any) => {
       console.log('[WS] subroutine:status received:', data);
       useStore.getState().updateActivity(data);
+    });
+
+    // ========================================
+    // AGENTIC CODE EDITOR EVENTS
+    // ========================================
+
+    this.socket.on('agentic:start', (data: any) => {
+      console.log('[WS] 🚀 Agentic edit started:', data);
+      console.log('[WS] 🚀 Setting isActive: true, goal:', data.goal);
+      const store = useStore.getState();
+      // Initialize or update the agentic edit state
+      store.setAgenticEditSession({
+        editId: data.editId,
+        documentId: data.documentId,
+        goal: data.goal,
+        approach: data.approach,
+        estimatedSteps: data.estimatedSteps,
+        phase: 'executing',
+        progress: 0,
+        currentStep: 0,
+        iterations: [],
+        startTime: data.timestamp,
+        isActive: true,
+      });
+      console.log('[WS] 🚀 Session state set, checking store:', store.collaborateState.agenticEditSession.isActive);
+    });
+
+    this.socket.on('agentic:progress', (data: any) => {
+      console.log('[WS] 📊 Agentic progress:', data.phase, data.progress + '%');
+      const store = useStore.getState();
+      store.updateAgenticEditProgress({
+        phase: data.phase,
+        progress: data.progress,
+        currentStep: data.currentStep,
+        totalSteps: data.totalSteps,
+        message: data.message,
+        currentSubGoal: data.currentSubGoal,
+      });
+    });
+
+    this.socket.on('agentic:phase', (data: any) => {
+      console.log('[WS] 📍 Agentic phase change:', data.phase);
+      const store = useStore.getState();
+      store.updateAgenticEditProgress({ phase: data.phase, message: data.message });
+    });
+
+    this.socket.on('agentic:thinking', (data: any) => {
+      console.log('[WS] 💭 Agentic thinking:', data.think?.slice(0, 80));
+      const store = useStore.getState();
+      store.updateAgenticEditThinking(data.think, data.structuredThought);
+    });
+
+    this.socket.on('agentic:iteration', (data: any) => {
+      console.log('[WS] 🔄 Agentic iteration:', data.iteration?.step);
+      const store = useStore.getState();
+      store.addAgenticEditIteration(data.iteration);
+    });
+
+    this.socket.on('agentic:iteration:start', (data: any) => {
+      console.log('[WS] ▶️ Agentic iteration start:', data.step);
+      const store = useStore.getState();
+      store.updateAgenticEditProgress({ currentStep: data.step });
+    });
+
+    this.socket.on('agentic:tool:call', (data: any) => {
+      console.log('[WS] 🔧 Agentic tool call:', data.toolCall?.tool);
+      const store = useStore.getState();
+      store.updateAgenticEditToolCall(data.toolCall);
+    });
+
+    this.socket.on('agentic:tool:result', (data: any) => {
+      console.log('[WS] ✅ Agentic tool result:', data.result?.success);
+      const store = useStore.getState();
+      store.updateAgenticEditToolResult(data.result);
+    });
+
+    this.socket.on('agentic:content', (data: any) => {
+      console.log('[WS] 📝 Agentic content change');
+      const store = useStore.getState();
+      const { collaborateState } = store;
+      if (collaborateState.activeDocument?.id === data.documentId) {
+        store.updateDocumentContent(data.content);
+      }
+    });
+
+    this.socket.on('agentic:diff', (data: any) => {
+      console.log('[WS] 📊 Agentic diff:', `+${data.linesAdded} -${data.linesRemoved}`);
+      const store = useStore.getState();
+      store.updateAgenticEditDiff(data);
+    });
+
+    this.socket.on('agentic:checkpoint', (data: any) => {
+      console.log('[WS] 🔒 Agentic checkpoint:', data.checkpoint?.description);
+      const store = useStore.getState();
+      store.addAgenticEditCheckpoint(data.checkpoint);
+    });
+
+    this.socket.on('agentic:complete', (data: any) => {
+      console.log('[WS] ✅ Agentic edit complete:', data.success ? 'SUCCESS' : 'FAILED');
+      const store = useStore.getState();
+      store.completeAgenticEdit({
+        success: data.success,
+        summary: data.summary,
+        changesCount: data.changesCount,
+        iterationsCount: data.iterationsCount,
+        duration: data.duration,
+      });
+    });
+
+    this.socket.on('agentic:error', (data: any) => {
+      console.error('[WS] ❌ Agentic edit error:', data.error);
+      const store = useStore.getState();
+      store.setAgenticEditError(data.error, data.recoverable, data.suggestion);
+    });
+
+    this.socket.on('agentic:plan', (data: any) => {
+      console.log('[WS] 📋 Agentic plan:', data.plan?.subGoals?.length, 'sub-goals');
+      const store = useStore.getState();
+      store.setAgenticEditPlan(data.plan);
+    });
+
+    this.socket.on('agentic:subgoal', (data: any) => {
+      console.log('[WS] 🎯 Agentic sub-goal update:', data.subGoalId, data.status);
+      const store = useStore.getState();
+      store.updateAgenticSubGoal(data.subGoalId, data.status);
+    });
+
+    this.socket.on('agentic:verification', (data: any) => {
+      console.log('[WS] 🔍 Agentic verification:', data.verification?.syntaxValid ? 'passed' : 'warnings');
+      // Verification data is informational - can be added to store if needed
+    });
+
+    this.socket.on('agentic:content:incremental', (data: any) => {
+      console.log('[WS] 📝 Agentic incremental change at', data.position);
+      // Incremental changes can be used for live typing effect in future
     });
 
     this.socket.on('search:results', (data: any) => {
@@ -286,25 +429,33 @@ class WSClient {
 
     // Streaming events for collaborate chat (mapped from orchestrator when source === 'collaborate')
     this.socket.on('collaborate:token', (token: string) => {
-      // Accumulate collaborate response tokens; UI will render only the final message for now
-      this.collaborateStreamingMessage += token;
+      // Accumulate collaborate response tokens in the store for visibility
+      useStore.getState().appendStreamingMessage(token);
     });
 
     this.socket.on('collaborate:split', () => {
       // Preserve split markers as paragraph breaks in the final message
-      this.collaborateStreamingMessage += '\n\n';
+      useStore.getState().appendStreamingMessage('\n\n');
     });
 
     this.socket.on('collaborate:complete', () => {
       // Clear any pending timeout
       this.clearOperationTimeout('collaborate_chat');
-      
-      if (this.collaborateStreamingMessage.trim()) {
-        useStore.getState().addCollaborateChatMessage('evelyn', this.collaborateStreamingMessage.trim());
+
+      const store = useStore.getState();
+      const message = store.completeStreaming();
+      if (message) {
+        store.addCollaborateChatMessage('evelyn', message);
       }
-      this.collaborateStreamingMessage = '';
     });
-    
+
+    // Server heartbeat - confirms server is still working on the task
+    this.socket.on('collaborate:heartbeat', (data: any) => {
+      console.log(`[WS] Heartbeat received for task ${data.taskId}, elapsed: ${data.elapsed}ms`);
+      // Reset any pending timeout since server is still active
+      // This prevents false timeout errors during long operations
+    });
+
     this.socket.on('collaborate:error', (data: any) => {
       // Clear any pending timeout
       this.clearOperationTimeout('collaborate_chat');
@@ -328,7 +479,10 @@ class WSClient {
     });
 
     this.socket.on('collaborate:message:saved', (message: any) => {
+      console.log('[WS] 💬 Collaborate message saved:', message.id, message.content?.slice(0, 50));
       const store = useStore.getState();
+      
+      // Add to main messages store for history
       store.addMessage({
         id: message.id,
         role: message.role,
@@ -337,23 +491,13 @@ class WSClient {
         auxiliary: message.auxiliary
       });
 
-      let auxiliary: any = null;
-      if (message.auxiliary) {
-        try {
-          auxiliary = typeof message.auxiliary === 'string' ? JSON.parse(message.auxiliary) : message.auxiliary;
-        } catch (parseError) {
-          console.error('[WS] Failed to parse collaborate message auxiliary:', parseError);
-        }
-      }
-
-      if (auxiliary?.autoEditSummary) {
-        const { collaborateState } = store;
-        if (collaborateState.activeDocument?.id === auxiliary.documentId) {
-          store.addCollaborateChatMessage('evelyn', message.content, {
-            id: message.id,
-            timestamp: message.createdAt
-          });
-        }
+      // ALWAYS add assistant messages to collaborate chat messages
+      if (message.role === 'assistant') {
+        console.log('[WS] 💬 Adding to collaborate chat:', message.content?.slice(0, 50));
+        store.addCollaborateChatMessage('evelyn', message.content, {
+          id: message.id,
+          timestamp: message.createdAt
+        });
       }
     });
 
@@ -495,7 +639,7 @@ class WSClient {
       store.setError(message);
       store.setCollaborateGeneratingStatus(false);
       store.setEditMode('user');
-      this.collaborateStreamingMessage = '';
+      store.clearStreaming();
       const activeDocId = store.collaborateState.activeDocument?.id;
       if (!data?.documentId || data.documentId === activeDocId) {
         store.setCollaborateIntentDetection(null);
@@ -536,6 +680,195 @@ class WSClient {
         }
       });
     }
+
+    // ========================================
+    // ARTIFACT EVENTS
+    // ========================================
+
+    this.socket.on('artifact:created', (data: any) => {
+      console.log('[WS] 🎨 Artifact created:', data.artifact?.id);
+      const store = useStore.getState();
+      store.addArtifact(data.artifact);
+    });
+
+    this.socket.on('artifact:updated', (data: any) => {
+      console.log('[WS] 🎨 Artifact updated:', data.artifact?.id);
+      const store = useStore.getState();
+      store.updateArtifact(data.artifact.id, data.artifact);
+    });
+
+    this.socket.on('artifact:status', (data: any) => {
+      console.log('[WS] 🎨 Artifact status:', data.artifactId, data.status);
+      const store = useStore.getState();
+      store.updateArtifact(data.artifactId, { status: data.status });
+    });
+
+    this.socket.on('artifact:status_changed', (data: any) => {
+      console.log('[WS] 🎨 Artifact status changed:', data.artifactId, data.status);
+      const store = useStore.getState();
+      store.updateArtifact(data.artifactId, {
+        status: data.status,
+        output: data.output,
+        error: data.error
+      });
+    });
+
+    this.socket.on('artifact:ready', (data: any) => {
+      console.log('[WS] 🎨 Artifact ready:', data.artifactId);
+      const store = useStore.getState();
+      store.updateArtifact(data.artifactId, { status: 'idle' });
+    });
+
+    this.socket.on('artifact:error', (data: any) => {
+      console.error('[WS] 🎨 Artifact error:', data.artifactId, data.error);
+      const store = useStore.getState();
+      if (data.artifactId) {
+        store.updateArtifact(data.artifactId, { 
+          status: 'error', 
+          error: data.error 
+        });
+      }
+    });
+
+    // File operation events (multi-file artifacts)
+    this.socket.on('artifact:file_updated', (data: any) => {
+      console.log('[WS] 📝 File updated:', data.path, 'in', data.artifactId);
+      const store = useStore.getState();
+      const artifact = store.artifacts.find(a => a.id === data.artifactId);
+      if (artifact && artifact.files) {
+        const updatedFiles = artifact.files.map(f => 
+          f.path === data.path ? { ...f, content: data.content } : f
+        );
+        store.updateArtifact(data.artifactId, { 
+          files: updatedFiles,
+          version: data.version 
+        });
+      }
+    });
+
+    this.socket.on('artifact:file_added', (data: any) => {
+      console.log('[WS] 📄 File added:', data.file?.path, 'to', data.artifactId);
+      const store = useStore.getState();
+      const artifact = store.artifacts.find(a => a.id === data.artifactId);
+      if (artifact) {
+        const newFiles = [...(artifact.files || []), data.file];
+        store.updateArtifact(data.artifactId, { 
+          files: newFiles,
+          version: data.version 
+        });
+      }
+    });
+
+    this.socket.on('artifact:file_deleted', (data: any) => {
+      console.log('[WS] 🗑️ File deleted:', data.path, 'from', data.artifactId);
+      const store = useStore.getState();
+      const artifact = store.artifacts.find(a => a.id === data.artifactId);
+      if (artifact && artifact.files) {
+        const remainingFiles = artifact.files.filter(f => f.path !== data.path);
+        store.updateArtifact(data.artifactId, { 
+          files: remainingFiles,
+          version: data.version 
+        });
+      }
+    });
+
+    // Unified orchestrator events
+    this.socket.on('unified:artifact', (data: any) => {
+      console.log('[WS] 🎯 Unified artifact:', data.artifact?.id);
+      const store = useStore.getState();
+      store.addArtifact(data.artifact);
+    });
+
+    this.socket.on('unified:response', (data: any) => {
+      console.log('[WS] 🎯 Unified response:', data.index + 1, '/', data.total);
+      // For unified responses, we treat them similar to chat tokens
+      // but as complete message splits
+      if (data.isLast) {
+        useStore.getState().finalizeMessages();
+      }
+    });
+
+    this.socket.on('unified:complete', (data: any) => {
+      console.log('[WS] 🎯 Unified complete:', data.totalTimeMs, 'ms');
+    });
+
+    this.socket.on('unified:error', (data: any) => {
+      console.error('[WS] 🎯 Unified error:', data.error);
+      useStore.getState().setError(data.error);
+    });
+
+    // Tool execution status events
+    this.socket.on('tool:status', (data: any) => {
+      console.log(`[WS] 🔧 Tool ${data.tool}: ${data.status} - ${data.summary}`);
+      // Can be used to show tool execution status in UI
+    });
+
+    this.socket.on('tool:browse_result', (data: any) => {
+      console.log('[WS] 🌐 Browse result:', data.url);
+    });
+
+    this.socket.on('tool:x_search', (data: any) => {
+      console.log('[WS] 🐦 X search result:', data.query);
+    });
+
+    // ========================================
+    // AGENT PROGRESS EVENTS (inline chat display)
+    // ========================================
+
+    this.socket.on('agent:start', (data: any) => {
+      console.log('[WS] 🤖 Agent started:', data.id);
+      useStore.getState().startAgentProgress(data.id || `progress_${Date.now()}`);
+    });
+
+    this.socket.on('agent:thinking', (data: any) => {
+      console.log('[WS] 💭 Agent thinking:', data.thought?.slice(0, 50));
+      useStore.getState().updateAgentThinking(data.thought || '');
+    });
+
+    this.socket.on('agent:tool_start', (data: any) => {
+      console.log('[WS] 🔧 Tool starting:', data.tool);
+      useStore.getState().addAgentToolCall({
+        id: data.id || `tool_${Date.now()}`,
+        tool: data.tool,
+        params: data.params || {},
+        status: 'running',
+        startedAt: new Date().toISOString()
+      });
+    });
+
+    this.socket.on('agent:tool_complete', (data: any) => {
+      console.log('[WS] ✅ Tool complete:', data.tool, data.status);
+      useStore.getState().updateAgentToolCall(data.id, {
+        status: data.status === 'error' ? 'error' : 'success',
+        result: data.result,
+        error: data.error,
+        summary: data.summary,
+        completedAt: new Date().toISOString(),
+        durationMs: data.durationMs
+      });
+    });
+
+    this.socket.on('agent:responding', (data: any) => {
+      console.log('[WS] 💬 Agent responding');
+      useStore.getState().setAgentStatus('responding');
+    });
+
+    this.socket.on('agent:complete', (data: any) => {
+      console.log('[WS] ✨ Agent complete:', data.messageId);
+      useStore.getState().completeAgentProgress(data.messageId);
+      // Clear progress after a delay to let user see the completed state
+      setTimeout(() => {
+        useStore.getState().clearAgentProgress();
+      }, 2000);
+    });
+
+    this.socket.on('agent:error', (data: any) => {
+      console.error('[WS] ❌ Agent error:', data.error);
+      const store = useStore.getState();
+      if (store.agentProgress) {
+        store.setAgentStatus('error');
+      }
+    });
 
     // Batch log updates for performance
     this.socket.on('logs:line', (data: any) => {
@@ -614,20 +947,23 @@ class WSClient {
     if (!this.socket?.connected) {
       throw new Error('Not connected to server');
     }
-    
+
     // Prevent duplicate messages within 1 second window
     const now = Date.now();
     if (content === this.lastSentMessage && now - this.lastSentTime < 1000) {
       console.warn('[WS] Duplicate message detected and prevented:', content.slice(0, 50));
       return;
     }
-    
+
     // Update deduplication tracking
     this.lastSentMessage = content;
     this.lastSentTime = now;
-    
-    console.log('[WS] Sending message:', content.slice(0, 50) + '...');
-    this.socket.emit('chat:send', { content, privacy });
+
+    // Get agentic mode from store
+    const { agenticMode } = useStore.getState();
+
+    console.log('[WS] Sending message:', content.slice(0, 50) + '...', `(agenticMode: ${agenticMode})`);
+    this.socket.emit('chat:send', { content, privacy, agenticMode });
   }
 
   subscribeDiagnostics() {
@@ -694,8 +1030,8 @@ class WSClient {
     if (!this.socket?.connected) {
       throw new Error('Not connected to server');
     }
-    // Reset any previous streaming buffer for collaborate chat
-    this.collaborateStreamingMessage = '';
+    // Start streaming - this resets the buffer and marks streaming as active
+    useStore.getState().startStreaming();
 
     // Set timeout for this operation
     this.setOperationTimeout('collaborate_chat', WS_TIMEOUTS.COLLABORATE_CHAT, () => {
@@ -703,6 +1039,9 @@ class WSClient {
         'Sorry, the response is taking too long. Please try again or check your connection.'
       );
     });
+
+    // Get agentic mode from store
+    const { agenticMode } = useStore.getState();
 
     this.socket.emit('collaborate:chat', {
       documentId,
@@ -714,7 +1053,8 @@ class WSClient {
         language
       },
       intent,
-      messageIndex
+      messageIndex,
+      agenticMode
     });
   }
 
@@ -814,6 +1154,38 @@ class WSClient {
       contentType,
       language,
       originMessageIndex
+    });
+  }
+
+  /**
+   * Cancel an in-progress collaborate task
+   */
+  cancelCollaborateTask(documentId: number) {
+    if (!this.socket?.connected) {
+      console.warn('[WS] Cannot cancel task - not connected');
+      return;
+    }
+
+    console.log(`[WS] Cancelling collaborate task for document ${documentId}`);
+
+    // Clear any pending timeouts for this operation
+    this.clearOperationTimeout('collaborate_agent_task');
+    this.clearOperationTimeout('collaborate_chat');
+
+    // Emit cancel event to server
+    this.socket.emit('collaborate:cancel', { documentId });
+
+    // Update local state immediately for responsive UI
+    const store = useStore.getState();
+    const currentSession = store.collaborateState.agenticEditSession;
+    store.setAgenticEditSession({
+      ...currentSession,
+      isActive: false,
+      phase: 'error',
+      error: 'Cancelled by user',
+      duration: currentSession.startTime
+        ? Date.now() - currentSession.startTime
+        : 0
     });
   }
 }

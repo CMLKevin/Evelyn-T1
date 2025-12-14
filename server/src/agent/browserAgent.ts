@@ -1,12 +1,14 @@
 import { Socket } from 'socket.io';
 import { db } from '../db/client.js';
 import { openRouterClient } from '../providers/openrouter.js';
-import { perplexityClient } from '../providers/perplexity.js';
 import { playwrightManager } from './playwright.js';
 import { personalityEngine } from './personality.js';
 import { memoryEngine } from './memory.js';
 import { estimateTokens } from '../utils/tokenizer.js';
 import { SYSTEM_PROMPTS } from '../prompts/index.js';
+
+// Perplexity Sonar Pro for web search (via OpenRouter)
+const PERPLEXITY_MODEL = 'perplexity/sonar-pro';
 
 // URL validation utilities
 class URLValidator {
@@ -153,6 +155,37 @@ interface BrowsingSession {
 class BrowserAgent {
   private sessions: Map<string, BrowsingSession> = new Map();
 
+  /**
+   * Find entry URL using Perplexity Sonar Pro via OpenRouter
+   */
+  private async findEntryUrlWithPerplexity(query: string): Promise<{ citations: string[]; answer: string }> {
+    const messages = [
+      {
+        role: 'user' as const,
+        content: `Find the best URL to start browsing for: ${query}
+
+Provide a direct answer with the most relevant URL sources. I need actual website URLs to visit.`
+      }
+    ];
+
+    let content = '';
+    for await (const token of openRouterClient.streamChat(messages, PERPLEXITY_MODEL)) {
+      content += token;
+    }
+
+    // Extract URLs from the response
+    const urlRegex = /https?:\/\/[^\s<>"{}|\\^`\[\]]+/g;
+    const urls = content.match(urlRegex) || [];
+    
+    // Clean up URLs (remove trailing punctuation)
+    const cleanUrls = urls.map(url => url.replace(/[.,;:!?)]+$/, ''));
+
+    return {
+      citations: cleanUrls,
+      answer: content
+    };
+  }
+
   async startSession(
     socket: Socket,
     options: SessionOptions
@@ -228,15 +261,15 @@ Respond in 2 sentences from YOUR perspective, showing your genuine intellectual 
       );
       console.log(`[BrowserAgent] Evelyn's intent: ${evelynIntent}`);
 
-      // Now search for entry URL using Sonar Pro (specialized method)
+      // Now search for entry URL using Perplexity Sonar Pro via OpenRouter
       session.state = 'searching';
       this.emitStatus(socket, session, 'Finding entry point with Sonar Pro...');
 
       const searchResult = await this.withTimeout(
-        perplexityClient.findEntryUrl(session.options.initialQuery),
+        this.findEntryUrlWithPerplexity(session.options.initialQuery),
         20000,
         'Search for entry URL timed out'
-      );
+      ) as { citations: string[]; answer: string };
       
       // Pick the first valid citation as entry URL
       let entryUrl: string | null = null;
@@ -1008,11 +1041,12 @@ ${session.pages.map((p, i) => `${i + 1}. ${p.title}: ${p.keyPoints.slice(0, 2).j
 
 [Please respond naturally with your thoughts on what you discovered]`;
 
-      // Trigger Evelyn's response to the browsing session via the orchestrator
-      const { orchestrator } = await import('./orchestrator.js');
-      await orchestrator.handleMessage(socket, {
-        content: browsingContext,
-        privacy: 'public'
+      // Trigger Evelyn's response to the browsing session via the unified orchestrator
+      const { unifiedOrchestrator } = await import('./unifiedOrchestrator.js');
+      await unifiedOrchestrator.handleMessage(browsingContext, {
+        source: 'chat',
+        socket,
+        activeDocument: undefined
       });
 
       console.log(`[BrowserAgent] Evelyn is now responding to the browsing results`);

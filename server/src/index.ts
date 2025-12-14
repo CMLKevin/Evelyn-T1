@@ -55,10 +55,6 @@ setupRoutes(app, io);
 // Setup WebSocket
 setupWebSocket(io);
 
-// Initialize orchestrator with io server (for agentic workflow)
-import { orchestrator } from './agent/orchestrator.js';
-orchestrator.setIOServer(io);
-
 // Initialize backup system
 async function initializeBackupSystem() {
   try {

@@ -4,7 +4,9 @@ import SearchResultBubble from './SearchResultBubble';
 import MarkdownRenderer from '../common/MarkdownRenderer';
 import AgentSessionInline from '../agent/AgentSessionInline';
 import AgentBrowsingResults from '../agent/AgentBrowsingResults';
-import { Trash2, User, Bot, Copy, Check, Layers, MessageSquare, Sparkles } from 'lucide-react';
+import AgentProgressInline from '../agent/AgentProgressInline';
+import { ArtifactCard } from '../artifacts';
+import { Trash2, User, Bot, Copy, Check, Layers, MessageSquare, Sparkles, Box } from 'lucide-react';
 import { Avatar } from '../ui';
 import { format } from 'date-fns';
 
@@ -16,6 +18,10 @@ export default function MessageList() {
   const searchResults = useStore(state => state.searchResults);
   const agentSession = useStore(state => state.agentSession);
   const browsingResults = useStore(state => state.browsingResults);
+  const artifacts = useStore(state => state.artifacts);
+  const agentProgress = useStore(state => state.agentProgress);
+  const setActiveArtifact = useStore(state => state.setActiveArtifact);
+  const runArtifact = useStore(state => state.runArtifact);
   const deleteMessage = useStore(state => state.deleteMessage);
   const contextUsage = useStore(state => state.contextUsage);
   
@@ -77,28 +83,28 @@ export default function MessageList() {
       {messages.length === 0 && !currentMessage && (
         <div className="flex flex-col items-center justify-center h-full animate-fade-in text-center px-4">
           <div className="mb-6 relative">
-            <div className="relative p-6 bg-orange/10 border-2 border-orange">
+            <div className="relative p-6 bg-orange/15 border border-orange/50 rounded-2xl">
               <Sparkles className="w-16 h-16 mx-auto text-orange" />
             </div>
           </div>
-          
+
           <h2 className="text-2xl font-bold mb-2 text-white">
             Welcome to Evelyn
           </h2>
           <p className="text-zinc-400 max-w-md leading-relaxed mb-6 text-sm">
             An evolving AI companion with persistent memory, personality, and deep reflection capabilities.
           </p>
-          
+
           <div className="flex gap-3 flex-wrap justify-center text-sm">
-            <div className="px-4 py-2 bg-terminal-900 border border-white/20">
+            <div className="px-4 py-2 bg-surface-2 border border-white/10 rounded-lg">
               <span>💭</span>
               <span className="ml-2 text-terminal-300 font-mono">Inner Thoughts</span>
             </div>
-            <div className="px-4 py-2 bg-terminal-900 border border-white/20">
+            <div className="px-4 py-2 bg-surface-2 border border-white/10 rounded-lg">
               <span>🧠</span>
               <span className="ml-2 text-terminal-300 font-mono">True Memory</span>
             </div>
-            <div className="px-4 py-2 bg-terminal-900 border border-white/20">
+            <div className="px-4 py-2 bg-surface-2 border border-white/10 rounded-lg">
               <span>✨</span>
               <span className="ml-2 text-terminal-300 font-mono">Evolves Over Time</span>
             </div>
@@ -176,28 +182,28 @@ export default function MessageList() {
                       {format(new Date(msg.createdAt), 'HH:mm:ss')}
                     </span>
                     {hasContextData && messageIdsInContext.includes(msg.id) && (
-                      <span className="flex items-center gap-1 px-1.5 py-0.5 bg-cyan-500/10 border border-cyan-500 text-[10px] text-cyan-500 font-mono uppercase" title="In active context window">
+                      <span className="flex items-center gap-1 px-1.5 py-0.5 bg-cyan-500/15 border border-cyan-500/50 rounded-sm text-[10px] text-cyan-500 font-mono uppercase" title="In active context window">
                         <Layers className="w-2.5 h-2.5" />
                         <span>CONTEXT</span>
                       </span>
                     )}
                     {isCollaborateMessage && (
-                      <span className="flex items-center gap-1 px-1.5 py-0.5 bg-orange/10 border border-orange text-[10px] text-orange font-mono uppercase" title="Originated from Collaborate chat">
+                      <span className="flex items-center gap-1 px-1.5 py-0.5 bg-orange/15 border border-orange/50 rounded-sm text-[10px] text-orange font-mono uppercase" title="Originated from Collaborate chat">
                         <MessageSquare className="w-2.5 h-2.5" />
                         <span>{collaborateTitle || 'Collaborate'}</span>
                       </span>
                     )}
                     {autoEditSummary && (
-                      <span className="px-1.5 py-0.5 bg-green-500/10 border border-green-500 text-[10px] text-green-500 font-mono uppercase">
+                      <span className="px-1.5 py-0.5 bg-green-500/15 border border-green-500/50 rounded-sm text-[10px] text-green-500 font-mono uppercase">
                         Auto Edit
                       </span>
                     )}
-                    
+
                     {/* Actions */}
                     <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                       <button
                         onClick={() => handleCopy(msg.content, msg.id)}
-                        className="p-1.5 bg-terminal-900 hover:bg-terminal-800 border border-white/20 hover:border-white/30 transition-colors duration-150 group/btn"
+                        className="p-1.5 bg-surface-2 hover:bg-surface-3 border border-white/15 hover:border-white/25 rounded-md transition-all duration-150 group/btn"
                         title="Copy message"
                       >
                         {copiedId === msg.id ? (
@@ -209,11 +215,11 @@ export default function MessageList() {
                       <button
                         onClick={() => handleDeleteMessage(msg.id)}
                         disabled={deletingMessageId === msg.id}
-                        className="p-1.5 bg-terminal-900 hover:bg-terminal-800 border border-white/20 hover:border-red-500 transition-colors duration-150 disabled:opacity-50 group/btn"
+                        className="p-1.5 bg-surface-2 hover:bg-surface-3 border border-white/15 hover:border-red-500/50 rounded-md transition-all duration-150 disabled:opacity-50 group/btn"
                         title="Delete message"
                       >
                         {deletingMessageId === msg.id ? (
-                          <div className="w-3.5 h-3.5 border-2 border-red-400 border-t-transparent animate-spin" />
+                          <div className="w-3.5 h-3.5 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
                         ) : (
                           <Trash2 className="w-3.5 h-3.5 text-zinc-400 group-hover/btn:text-red-400 transition-colors" />
                         )}
@@ -221,8 +227,8 @@ export default function MessageList() {
                     </div>
                   </div>
 
-                  {/* Message Bubble */}
-                  <div className={`px-4 py-3 border-2 ${isUser ? 'bg-cyan-500/20 border-cyan-500' : 'bg-[#0f0f0f] border-white/30'}`}>
+                  {/* Message Bubble - Asymmetric rounding */}
+                  <div className={`px-4 py-3 border ${isUser ? 'bg-cyan-500/15 border-cyan-500/40 rounded-lg rounded-tl-sm' : 'bg-surface-2 border-white/10 rounded-lg rounded-tr-sm'}`}>
                     <div className="text-white font-semibold text-sm leading-relaxed prose prose-invert prose-sm max-w-none">
                       {isUser ? (
                         <span className="whitespace-pre-wrap break-words">{msg.content}</span>
@@ -248,6 +254,17 @@ export default function MessageList() {
                 return brTime > msgTime && brTime < nextMsgTime;
               }).map((br) => (
                 <AgentBrowsingResults key={br.sessionId} {...br} />
+              ))}
+
+              {/* Render artifacts associated with this message */}
+              {artifacts.filter(art => art.messageId === msg.id).map((artifact) => (
+                <div key={artifact.id} className="mt-3 ml-12">
+                  <ArtifactCard
+                    artifact={artifact}
+                    onClick={() => setActiveArtifact(artifact)}
+                    onRun={() => runArtifact(artifact.id)}
+                  />
+                </div>
               ))}
 
               {/* Render inline agent session if it belongs in the timeline */}
@@ -288,7 +305,7 @@ export default function MessageList() {
       {/* Render temporary split messages during streaming */}
       {tempMessages.map((msg) => (
         <div key={`temp-msg-${msg.id}`} className="flex items-start gap-3 animate-fade-in">
-          <Avatar 
+          <Avatar
             variant="ai"
             size="md"
             icon={<Sparkles className="w-4 h-4" />}
@@ -300,7 +317,7 @@ export default function MessageList() {
               <span className="text-zinc-500">{format(new Date(msg.createdAt), 'HH:mm:ss')}</span>
             </div>
 
-            <div className="px-4 py-3 bg-terminal-900 border-2 border-white/20">
+            <div className="px-4 py-3 bg-surface-2 border border-white/10 rounded-lg rounded-tr-sm">
               <div className="text-zinc-200 text-sm leading-relaxed prose prose-invert prose-sm max-w-none">
                 <MarkdownRenderer content={msg.content} />
               </div>
@@ -309,10 +326,29 @@ export default function MessageList() {
         </div>
       ))}
 
+      {/* Agent Progress - shows when Evelyn is thinking/using tools */}
+      {agentProgress && agentProgress.status !== 'complete' && (
+        <AgentProgressInline
+          data={{
+            id: agentProgress.id,
+            status: agentProgress.status,
+            thinking: agentProgress.thinking,
+            toolCalls: agentProgress.toolCalls,
+            response: agentProgress.response,
+            startedAt: agentProgress.startedAt,
+            completedAt: agentProgress.completedAt,
+            error: agentProgress.error,
+            iteration: agentProgress.iteration,
+            maxIterations: agentProgress.maxIterations
+          }}
+          isActive={true}
+        />
+      )}
+
       {/* Typing indicator */}
       {currentMessage && (
         <div className="flex items-start gap-3 animate-fade-in">
-          <Avatar 
+          <Avatar
             variant="ai"
             size="md"
             icon={<Sparkles className="w-4 h-4" />}
@@ -322,16 +358,16 @@ export default function MessageList() {
             <div className="flex items-center gap-2 text-xs">
               <span className="font-medium text-white">Evelyn</span>
               <span className="flex items-center gap-1">
-                <div className="w-2 h-2 bg-orange animate-typing-bounce" />
-                <div className="w-2 h-2 bg-orange animate-typing-bounce" style={{ animationDelay: '0.2s' }} />
-                <div className="w-2 h-2 bg-orange animate-typing-bounce" style={{ animationDelay: '0.4s' }} />
+                <div className="w-2 h-2 bg-orange rounded-full animate-typing-bounce" />
+                <div className="w-2 h-2 bg-orange rounded-full animate-typing-bounce" style={{ animationDelay: '0.2s' }} />
+                <div className="w-2 h-2 bg-orange rounded-full animate-typing-bounce" style={{ animationDelay: '0.4s' }} />
               </span>
             </div>
 
-            <div className="px-4 py-3 bg-terminal-900 border-2 border-white/20">
+            <div className="px-4 py-3 bg-surface-2 border border-white/10 rounded-lg rounded-tr-sm">
               <div className="text-zinc-200 text-sm leading-relaxed prose prose-invert prose-sm max-w-none">
                 <MarkdownRenderer content={currentMessage} />
-                <span className="inline-block w-0.5 h-4 bg-orange ml-0.5 animate-pulse"></span>
+                <span className="inline-block w-0.5 h-4 bg-orange ml-0.5 rounded-full animate-pulse"></span>
               </div>
             </div>
           </div>

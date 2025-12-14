@@ -22,18 +22,20 @@ export const Avatar: FC<AvatarProps> = ({
   className = '',
   ...props
 }) => {
-  const baseStyles = 'flex items-center justify-center overflow-hidden border-2';
-  
+  // Base styles - softer border for glass look
+  const baseStyles = 'flex items-center justify-center overflow-hidden border transition-all duration-200';
+
   const variantStyles: Record<AvatarVariant, string> = {
-    ai: 'bg-orange/10 border-orange',
-    user: 'bg-cyan-500/10 border-cyan-500',
-    default: 'bg-terminal-800 border-white/20',
+    ai: 'bg-orange/15 border-orange/60',
+    user: 'bg-cyan-500/15 border-cyan-500/60',
+    default: 'bg-surface-3 border-white/15',
   };
-  
+
+  // Size-based radius: larger avatars get more rounding
   const sizeStyles: Record<AvatarSize, string> = {
-    sm: 'w-6 h-6',
-    md: 'w-8 h-8',
-    lg: 'w-12 h-12',
+    sm: 'w-6 h-6 rounded-md',
+    md: 'w-8 h-8 rounded-lg',
+    lg: 'w-12 h-12 rounded-xl',
   };
   
   const iconSizeStyles: Record<AvatarSize, string> = {

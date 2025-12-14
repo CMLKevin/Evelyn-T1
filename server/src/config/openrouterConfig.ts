@@ -38,9 +38,9 @@ export function getOpenRouterConfig(): OpenRouterConfig {
   const baseUrl = process.env.OPENROUTER_BASE || 'https://openrouter.ai/api/v1';
 
   const models: OpenRouterModelsConfig = {
-    chat: process.env.MODEL_CHAT || 'moonshotai/kimi-k2-0905',
-    thinkSimple: process.env.MODEL_THINK_SIMPLE || 'moonshotai/kimi-k2-0905',
-    thinkComplex: process.env.MODEL_THINK_COMPLEX || 'moonshotai/kimi-k2-0905',
+    chat: process.env.MODEL_CHAT || 'x-ai/grok-4.1-fast:free',
+    thinkSimple: process.env.MODEL_THINK_SIMPLE || 'x-ai/grok-4.1-fast:free',
+    thinkComplex: process.env.MODEL_THINK_COMPLEX || 'x-ai/grok-4.1-fast:free',
     agent: process.env.MODEL_AGENT || 'z-ai/glm-4.5v',
     embedding: process.env.EMBEDDING_MODEL || 'qwen/qwen3-embedding-8b',
   };

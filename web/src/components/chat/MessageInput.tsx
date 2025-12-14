@@ -17,6 +17,7 @@ export default function MessageInput() {
   const addToHistory = useStore(state => state.addToHistory);
   const navigateHistory = useStore(state => state.navigateHistory);
   const resetHistoryIndex = useStore(state => state.resetHistoryIndex);
+  const agenticMode = useStore(state => state.agenticMode);
 
   const handleBrowse = useCallback(() => {
     if (!input.trim() || !connected) return;
@@ -214,16 +215,18 @@ export default function MessageInput() {
           </div>
           
           <div className="flex items-center gap-2">
-            {/* Browse Button */}
-            <button
-              onClick={handleBrowse}
-              disabled={!input.trim() || !connected || agentSession.isActive || !!currentMessage}
-              className="px-3 py-1.5 bg-terminal-900 hover:bg-terminal-800 border-2 border-white/20 hover:border-white/30 text-terminal-300 hover:text-white text-sm font-mono transition-colors duration-150 disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
-              title={currentMessage ? "Wait for Evelyn to finish responding" : "Start agentic web browsing"}
-            >
-              <Globe className="w-4 h-4" />
-              <span>Browse</span>
-            </button>
+            {/* Browse Button - only shown in agentic mode */}
+            {agenticMode && (
+              <button
+                onClick={handleBrowse}
+                disabled={!input.trim() || !connected || agentSession.isActive || !!currentMessage}
+                className="px-3 py-1.5 bg-terminal-900 hover:bg-terminal-800 border-2 border-white/20 hover:border-white/30 text-terminal-300 hover:text-white text-sm font-mono transition-colors duration-150 disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-2"
+                title={currentMessage ? "Wait for Evelyn to finish responding" : "Start agentic web browsing"}
+              >
+                <Globe className="w-4 h-4" />
+                <span>Browse</span>
+              </button>
+            )}
 
             {/* Send Button */}
             <button

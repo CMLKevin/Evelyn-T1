@@ -1,5 +1,5 @@
 import { Server, Socket } from 'socket.io';
-import { orchestrator } from '../agent/orchestrator.js';
+import { unifiedOrchestrator } from '../agent/unifiedOrchestrator.js';
 import { browserAgent } from '../agent/browserAgent.js';
 import { logger } from '../utils/logger.js';
 import { db } from '../db/client.js';
@@ -10,8 +10,7 @@ import {
   applyShortcut,
   makeTargetedEdit,
   planCollaborateTask,
-  applyAutonomousEdit,
-  determineCollaborateIntent
+  applyAutonomousEdit
 } from '../agent/collaborativeAssistant.js';
 import { COLLABORATE_CONFIG } from '../constants/index.js';
 
@@ -27,6 +26,21 @@ interface ActiveTask {
 }
 
 const activeCollaborateTasks = new Map<number, ActiveTask>();
+
+// Track cancelled tasks for graceful termination
+const cancelledTasks = new Set<number>();
+
+function isTaskCancelled(documentId: number): boolean {
+  return cancelledTasks.has(documentId);
+}
+
+function markTaskCancelled(documentId: number): void {
+  cancelledTasks.add(documentId);
+}
+
+function clearTaskCancellation(documentId: number): void {
+  cancelledTasks.delete(documentId);
+}
 
 // Cleanup stale tasks periodically
 const TASK_TIMEOUT_MS = COLLABORATE_CONFIG.WS.TASK_TIMEOUT_MS;
@@ -70,6 +84,7 @@ function registerTask(documentId: number, taskId: string, socketId: string): voi
 
 function unregisterTask(documentId: number): void {
   activeCollaborateTasks.delete(documentId);
+  clearTaskCancellation(documentId);
 }
 
 async function runCollaborateAgentTask(
@@ -107,6 +122,23 @@ async function runCollaborateAgentTask(
   }
 
   registerTask(data.documentId, taskId, socket.id);
+
+  // Start heartbeat to keep client informed during long operations
+  const startTime = Date.now();
+  const heartbeatInterval = setInterval(() => {
+    const elapsed = Date.now() - startTime;
+    socket.emit('collaborate:heartbeat', {
+      documentId: data.documentId,
+      taskId,
+      elapsed,
+      timestamp: new Date().toISOString()
+    });
+  }, 30000); // Every 30 seconds
+
+  // Helper to clean up heartbeat
+  const stopHeartbeat = () => {
+    clearInterval(heartbeatInterval);
+  };
 
   const baseSteps = [
     { id: 'plan', label: 'Plan task', status: 'running' as const },
@@ -292,6 +324,7 @@ async function runCollaborateAgentTask(
       message: error instanceof Error ? error.message : 'Failed to run collaborate agent task'
     });
   } finally {
+    stopHeartbeat();
     unregisterTask(data.documentId);
   }
 }
@@ -302,12 +335,99 @@ export function setupWebSocket(io: Server) {
   io.on('connection', (socket: Socket) => {
     console.log(`Client connected: ${socket.id}`);
 
-    socket.on('chat:send', async (data: { content: string; privacy?: string; activeCanvasId?: number }) => {
+    socket.on('chat:send', async (data: { content: string; privacy?: string; activeCanvasId?: number; agenticMode?: boolean }) => {
       try {
-        await orchestrator.handleMessage(socket, data);
+        // Use unified orchestrator for all chat messages
+        const context = {
+          source: 'chat' as const,
+          socket,
+          activeDocument: undefined,
+          agenticMode: data.agenticMode ?? true  // Default to agentic mode
+        };
+
+        const result = await unifiedOrchestrator.handleMessage(data.content, context);
+
+        // Emit tokens for streaming compatibility (the unified orchestrator streams internally)
+        // Emit completion
+        socket.emit('chat:complete', {
+          correlationId: result.correlationId,
+          messageCount: result.responseSplits.length
+        });
       } catch (error) {
         console.error('Chat error:', error);
         socket.emit('chat:error', { 
+          error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+      }
+    });
+
+    // Unified chat handler with tool support
+    socket.on('unified:send', async (data: { 
+      content: string; 
+      documentId?: number;
+      documentTitle?: string;
+      documentContent?: string;
+      documentType?: 'text' | 'code' | 'mixed';
+      documentLanguage?: string;
+    }) => {
+      try {
+        console.log('[WebSocket] unified:send received');
+        
+        // Build context for unified orchestrator
+        const context: Parameters<typeof unifiedOrchestrator.handleMessage>[1] = {
+          source: data.documentId ? 'collaborate' : 'chat',
+          socket,
+          activeDocument: data.documentId ? {
+            id: data.documentId,
+            title: data.documentTitle || 'Untitled',
+            contentType: data.documentType || 'text',
+            language: data.documentLanguage || null,
+            content: data.documentContent || ''
+          } : undefined
+        };
+
+        const result = await unifiedOrchestrator.handleMessage(data.content, context);
+
+        // Emit response messages
+        for (let i = 0; i < result.responseSplits.length; i++) {
+          socket.emit('unified:response', {
+            correlationId: result.correlationId,
+            content: result.responseSplits[i],
+            index: i,
+            total: result.responseSplits.length,
+            isLast: i === result.responseSplits.length - 1
+          });
+        }
+
+        // Emit artifacts
+        for (const artifact of result.artifacts) {
+          socket.emit('unified:artifact', {
+            correlationId: result.correlationId,
+            artifact
+          });
+        }
+
+        // Emit tool results summary
+        if (result.toolResults.length > 0) {
+          socket.emit('unified:tools_complete', {
+            correlationId: result.correlationId,
+            tools: result.toolResults.map(t => ({
+              name: t.toolName,
+              status: t.status,
+              summary: t.summary
+            })),
+            totalTimeMs: result.totalTimeMs
+          });
+        }
+
+        // Emit completion
+        socket.emit('unified:complete', {
+          correlationId: result.correlationId,
+          totalTimeMs: result.totalTimeMs
+        });
+      } catch (error) {
+        console.error('Unified chat error:', error);
+        socket.emit('unified:error', { 
           error: error instanceof Error ? error.message : 'Unknown error' 
         });
       }
@@ -466,7 +586,7 @@ export function setupWebSocket(io: Server) {
     // COLLABORATE FEATURE EVENTS
     // ========================================
 
-    socket.on('collaborate:chat', async (data: { 
+    socket.on('collaborate:chat', async (data: {
       documentId: number;
       message: string;
       document?: {
@@ -477,6 +597,7 @@ export function setupWebSocket(io: Server) {
       };
       intent?: string;
       messageIndex?: number;
+      agenticMode?: boolean;
     }) => {
       try {
         console.log(`[WebSocket] collaborate:chat received for document ${data.documentId}`);
@@ -506,29 +627,27 @@ export function setupWebSocket(io: Server) {
         const resolvedContentType = data.document?.contentType ?? (document.contentType as 'text' | 'code' | 'mixed');
         const resolvedLanguage = data.document?.language ?? document.language ?? null;
 
-        // DISABLED: Old intent detection system - now using new agentic editor
-        // const intentResult = await determineCollaborateIntent(data.message, {
-        //   title: resolvedTitle,
-        //   content: resolvedContent,
-        //   contentType: resolvedContentType,
-        //   language: resolvedLanguage
-        // }).catch((intentError) => {
-        //   console.error('[Collaborate] Intent detection failed:', intentError);
-        //   return null;
-        // });
-
-        await orchestrator.handleMessage(socket, {
-          content: data.message,
-          privacy: 'public',
-          source: 'collaborate',
-          collaborateDocumentContext: {
-            documentId: document.id,
+        // Use unified orchestrator for collaborate chat
+        const context = {
+          source: 'collaborate' as const,
+          socket,
+          activeDocument: {
+            id: document.id,
             title: resolvedTitle,
             contentType: resolvedContentType,
             language: resolvedLanguage,
             content: resolvedContent
-          }
-          // intentContext removed - using new agentic editor instead
+          },
+          agenticMode: data.agenticMode ?? true  // Default to agentic mode
+        };
+
+        const result = await unifiedOrchestrator.handleMessage(data.message, context);
+
+        // Emit completion for collaborate
+        socket.emit('collaborate:response_complete', {
+          documentId: document.id,
+          correlationId: result.correlationId,
+          messageCount: result.responseSplits.length
         });
 
         // DISABLED: Old intent detection and auto-edit system
@@ -662,7 +781,55 @@ export function setupWebSocket(io: Server) {
       }
     });
 
-    socket.on('collaborate:request_suggestions', async (data: { 
+    // Cancel an in-progress collaborate task
+    socket.on('collaborate:cancel', async (data: { documentId: number }) => {
+      try {
+        console.log(`[WebSocket] collaborate:cancel received for document ${data.documentId}`);
+
+        const task = activeCollaborateTasks.get(data.documentId);
+        if (task) {
+          // Mark the task as cancelled - the running task will check this flag
+          markTaskCancelled(data.documentId);
+
+          // Emit cancellation confirmation
+          socket.emit('collaborate:task_cancelled', {
+            documentId: data.documentId,
+            taskId: task.taskId,
+            timestamp: new Date().toISOString()
+          });
+
+          // Also emit task status update for UI
+          socket.emit('collaborate:task_status', {
+            documentId: data.documentId,
+            taskId: task.taskId,
+            kind: 'custom',
+            status: 'cancelled',
+            steps: [],
+            currentStepId: null,
+            error: 'Task cancelled by user',
+            timestamp: new Date().toISOString()
+          });
+
+          console.log(`[WebSocket] Task ${task.taskId} marked for cancellation`);
+        } else {
+          // No active task to cancel
+          socket.emit('collaborate:task_cancelled', {
+            documentId: data.documentId,
+            taskId: null,
+            message: 'No active task to cancel',
+            timestamp: new Date().toISOString()
+          });
+        }
+      } catch (error) {
+        console.error('Collaborate cancel error:', error);
+        socket.emit('collaborate:error', {
+          documentId: data.documentId,
+          message: error instanceof Error ? error.message : 'Failed to cancel task'
+        });
+      }
+    });
+
+    socket.on('collaborate:request_suggestions', async (data: {
       documentId: number;
       content: string;
       category: 'writing' | 'code';
@@ -888,6 +1055,120 @@ export function setupWebSocket(io: Server) {
           documentId: data.documentId,
           message: error instanceof Error ? error.message : 'Analysis failed' 
         });
+      }
+    });
+
+    // ========================================
+    // ARTIFACT EVENTS
+    // ========================================
+
+    socket.on('artifact:run', async (data: { artifactId: string }) => {
+      try {
+        console.log(`[WebSocket] artifact:run for ${data.artifactId}`);
+        
+        const artifact = await db.artifact.findUnique({
+          where: { id: data.artifactId }
+        });
+
+        if (!artifact) {
+          socket.emit('artifact:error', {
+            artifactId: data.artifactId,
+            error: 'Artifact not found'
+          });
+          return;
+        }
+
+        // Update status to running
+        await db.artifact.update({
+          where: { id: data.artifactId },
+          data: { status: 'running' }
+        });
+
+        socket.emit('artifact:status', {
+          artifactId: data.artifactId,
+          status: 'running'
+        });
+
+        // For Python artifacts, we could execute server-side here
+        // For now, frontend handles execution in sandbox
+        
+        socket.emit('artifact:ready', {
+          artifactId: data.artifactId,
+          type: artifact.type,
+          code: artifact.code
+        });
+      } catch (error) {
+        console.error('Artifact run error:', error);
+        socket.emit('artifact:error', {
+          artifactId: data.artifactId,
+          error: error instanceof Error ? error.message : 'Failed to run artifact'
+        });
+      }
+    });
+
+    socket.on('artifact:update_status', async (data: { 
+      artifactId: string;
+      status: 'idle' | 'running' | 'success' | 'error';
+      output?: string;
+      error?: string;
+    }) => {
+      try {
+        await db.artifact.update({
+          where: { id: data.artifactId },
+          data: {
+            status: data.status,
+            output: data.output || null,
+            error: data.error || null,
+            updatedAt: new Date()
+          }
+        });
+
+        // Broadcast to all clients
+        io.emit('artifact:status_changed', {
+          artifactId: data.artifactId,
+          status: data.status,
+          output: data.output,
+          error: data.error
+        });
+      } catch (error) {
+        console.error('Artifact status update error:', error);
+      }
+    });
+
+    socket.on('artifact:get', async (data: { artifactId: string }) => {
+      try {
+        const artifact = await db.artifact.findUnique({
+          where: { id: data.artifactId },
+          include: { versions: { orderBy: { version: 'desc' }, take: 10 } }
+        });
+
+        if (artifact) {
+          socket.emit('artifact:data', { artifact });
+        } else {
+          socket.emit('artifact:error', {
+            artifactId: data.artifactId,
+            error: 'Artifact not found'
+          });
+        }
+      } catch (error) {
+        console.error('Artifact get error:', error);
+        socket.emit('artifact:error', {
+          artifactId: data.artifactId,
+          error: error instanceof Error ? error.message : 'Failed to get artifact'
+        });
+      }
+    });
+
+    socket.on('artifact:list', async () => {
+      try {
+        const artifacts = await db.artifact.findMany({
+          orderBy: { updatedAt: 'desc' },
+          take: 50
+        });
+        socket.emit('artifact:list', { artifacts });
+      } catch (error) {
+        console.error('Artifact list error:', error);
+        socket.emit('artifact:error', { error: 'Failed to list artifacts' });
       }
     });
 

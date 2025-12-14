@@ -23,11 +23,11 @@ export default function StatusLine() {
   };
 
   return (
-    <div className="px-5 py-2 flex items-center justify-between border-t-2 border-white/20 bg-terminal-dark select-none">
+    <div className="glass-footer px-5 py-2.5 flex items-center justify-between select-none rounded-b-2xl">
       {/* Left: Active Tab & Stats */}
       <div className="flex items-center gap-4">
-        {/* Active Tab */}
-        <div className="flex items-center gap-2 px-3 py-1 bg-orange/10 border-2 border-orange">
+        {/* Active Tab - Pill shaped */}
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-orange/15 border border-orange/50 rounded-full">
           <div className="text-orange">
             {getActiveIcon()}
           </div>
@@ -52,8 +52,8 @@ export default function StatusLine() {
 
       {/* Right: Connection & Shortcuts */}
       <div className="flex items-center gap-4">
-        {/* Connection Status */}
-        <div className="flex items-center gap-2 px-3 py-1 bg-terminal-900 border border-white/20">
+        {/* Connection Status - Pill shaped */}
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-2/80 backdrop-blur-sm border border-white/10 rounded-full">
           <StatusDot variant={connected ? 'online' : 'offline'} animated={connected} />
           <span className="text-xs font-mono font-medium text-terminal-400">
             {connected ? 'ONLINE' : 'OFFLINE'}
@@ -63,16 +63,16 @@ export default function StatusLine() {
         {/* Keyboard Shortcuts */}
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-1.5">
-            <kbd className="px-1.5 py-0.5 bg-terminal-900 border border-white/20 text-terminal-400 font-mono text-[10px]">
+            <kbd className="px-1.5 py-0.5 bg-surface-2/80 border border-white/15 text-terminal-400 font-mono text-[10px] rounded">
               ⌘K
             </kbd>
             <span className="text-xs text-terminal-600 font-mono">Commands</span>
           </div>
-          
-          <div className="w-px h-4 bg-white/20" />
-          
+
+          <div className="w-px h-4 bg-white/15" />
+
           <div className="flex items-center gap-1.5">
-            <kbd className="px-1.5 py-0.5 bg-terminal-900 border border-white/20 text-terminal-400 font-mono text-[10px]">
+            <kbd className="px-1.5 py-0.5 bg-surface-2/80 border border-white/15 text-terminal-400 font-mono text-[10px] rounded">
               ⌘F
             </kbd>
             <span className="text-xs text-terminal-600 font-mono">Search</span>

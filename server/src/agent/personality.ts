@@ -1,5 +1,6 @@
 import { db } from '../db/client.js';
 import { openRouterClient } from '../providers/openrouter.js';
+import { getLLMModel } from '../utils/settings.js';
 import temporalEngine from '../core/temporalEngine.js';
 
 
@@ -386,7 +387,9 @@ class PersonalityEngine {
       .replace('{{ASSISTANT}}', assistantMessage);
 
     try {
-      const response = await openRouterClient.simpleThought(prompt);
+      // Use the user's selected LLM model for mood updates
+      const selectedModel = await getLLMModel();
+      const response = await openRouterClient.simpleThought(prompt, selectedModel);
       
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {

@@ -69,13 +69,16 @@
   --color-primary-hover: var(--accent-orange-dark);
   --color-bg: var(--terminal-black);
   
-  /* Shadows - Minimal, Sharp */
-  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.8);
-  --shadow-md: 0 2px 4px 0 rgba(0, 0, 0, 0.9);
-  --shadow-lg: 0 4px 8px 0 rgba(0, 0, 0, 0.9);
-  --shadow-xl: 0 8px 16px 0 rgba(0, 0, 0, 0.9);
-  --shadow-orange: 0 0 10px rgba(255, 107, 53, 0.3);
-  
+  /* Shadows - Layered Elevation System */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
+  --shadow-2xl: 0 25px 50px -12px rgba(0, 0, 0, 0.6);
+  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-orange: 0 0 24px rgba(255, 107, 53, 0.4);
+  --shadow-cyan: 0 0 20px rgba(0, 255, 255, 0.25);
+
   /* Spacing Scale */
   --spacing-xs: 0.25rem;
   --spacing-sm: 0.5rem;
@@ -83,15 +86,30 @@
   --spacing-lg: 1.5rem;
   --spacing-xl: 2rem;
   --spacing-2xl: 3rem;
-  
-  /* Border Radius - NONE! Boxy Terminal Style */
+
+  /* Border Radius - Modern Scale */
   --radius-none: 0;
-  --radius-sm: 0;
-  --radius-md: 0;
-  --radius-lg: 0;
-  --radius-xl: 0;
-  --radius-2xl: 0;
-  --radius-full: 0;
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
+  --radius-3xl: 24px;
+  --radius-full: 9999px;
+
+  /* Glass Backgrounds for Glassmorphism */
+  --glass-dark: rgba(10, 10, 10, 0.85);
+  --glass-medium: rgba(26, 26, 26, 0.8);
+  --glass-light: rgba(38, 38, 38, 0.75);
+  --glass-card: rgba(20, 20, 20, 0.9);
+  --glass-overlay: rgba(0, 0, 0, 0.6);
+
+  /* Blur Values */
+  --blur-sm: 8px;
+  --blur-md: 12px;
+  --blur-lg: 20px;
+  --blur-xl: 32px;
   
   /* Typography - Monospace for Terminal Feel */
   --font-mono: 'Fira Code', 'JetBrains Mono', 'Courier New', monospace;
@@ -159,6 +177,136 @@ strong, b {
 #root {
   width: 100vw;
   height: 100vh;
+}
+
+/* ===== Glassmorphism Utilities ===== */
+
+/* Glass Panel - Main container variant */
+.glass-panel {
+  background: var(--glass-dark);
+  backdrop-filter: blur(var(--blur-lg));
+  -webkit-backdrop-filter: blur(var(--blur-lg));
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-lg);
+}
+
+/* Glass Panel Elevated - For modal-like elements */
+.glass-panel-elevated {
+  background: var(--glass-medium);
+  backdrop-filter: blur(var(--blur-xl));
+  -webkit-backdrop-filter: blur(var(--blur-xl));
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-glass);
+}
+
+/* Glass Card - For smaller content containers */
+.glass-card {
+  background: var(--glass-card);
+  backdrop-filter: blur(var(--blur-md));
+  -webkit-backdrop-filter: blur(var(--blur-md));
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-md);
+}
+
+/* Glass Header - Top header with gradient */
+.glass-header {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 107, 53, 0.08) 0%,
+    var(--glass-dark) 100%
+  );
+  backdrop-filter: blur(var(--blur-lg));
+  -webkit-backdrop-filter: blur(var(--blur-lg));
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Glass Footer - Bottom status bar */
+.glass-footer {
+  background: linear-gradient(
+    0deg,
+    rgba(255, 107, 53, 0.05) 0%,
+    var(--glass-dark) 100%
+  );
+  backdrop-filter: blur(var(--blur-lg));
+  -webkit-backdrop-filter: blur(var(--blur-lg));
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Glass Input - Form inputs */
+.glass-input {
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(var(--blur-sm));
+  -webkit-backdrop-filter: blur(var(--blur-sm));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease-out;
+}
+
+.glass-input:hover {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.glass-input:focus {
+  border-color: var(--accent-orange);
+  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.15);
+  outline: none;
+}
+
+/* Glass Overlay - Modal backgrounds */
+.glass-overlay {
+  background: var(--glass-overlay);
+  backdrop-filter: blur(var(--blur-sm));
+  -webkit-backdrop-filter: blur(var(--blur-sm));
+}
+
+/* Interactive Glass States */
+.glass-interactive {
+  transition: all 0.2s ease-out;
+}
+
+.glass-interactive:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+}
+
+.glass-interactive:active {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Hover Lift Effect */
+.hover-lift {
+  transition: transform 0.2s ease-out, box-shadow 0.2s ease-out;
+}
+
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Button Press Effect */
+.btn-press:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+/* Card Glow on Hover */
+.card-glow:hover {
+  box-shadow:
+    var(--shadow-lg),
+    0 0 0 1px rgba(255, 107, 53, 0.15);
+}
+
+/* Input Focus Glow */
+.input-glow:focus {
+  box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.15);
+}
+
+/* Pill Shape Utility */
+.pill {
+  border-radius: var(--radius-full);
 }
 
 /* ===== Terminal Components ===== */
@@ -449,20 +597,23 @@ pre code {
 /* ===== Tab Styles ===== */
 .terminal-tabs {
   display: flex;
-  gap: 2px;
-  background: rgba(0, 0, 0, 0.5);
-  padding: 0.5rem 0.5rem 0;
-  border-bottom: 1px solid var(--terminal-border);
+  gap: 4px;
+  background: var(--glass-dark);
+  backdrop-filter: blur(var(--blur-md));
+  -webkit-backdrop-filter: blur(var(--blur-md));
+  padding: 0.625rem 0.75rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .terminal-tab {
-  padding: 0.5rem 1.5rem;
-  background: rgba(0, 0, 0, 0.5);
+  padding: 0.625rem 1.5rem;
+  background: transparent;
   border: 1px solid transparent;
   border-bottom: none;
+  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
   color: var(--terminal-text-dim);
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s ease-out;
   font-family: inherit;
   font-weight: 500;
   position: relative;
@@ -471,30 +622,31 @@ pre code {
 .terminal-tab::before {
   content: '';
   position: absolute;
-  bottom: -1px;
-  left: 0;
-  right: 0;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%) scaleX(0);
+  width: 60%;
   height: 2px;
-  background: var(--terminal-primary);
-  transform: scaleX(0);
-  transition: transform 0.2s;
+  background: linear-gradient(90deg, transparent, var(--accent-orange), transparent);
+  border-radius: 2px 2px 0 0;
+  transition: transform 0.2s ease-out;
 }
 
 .terminal-tab:hover {
   color: var(--terminal-text);
-  background: rgba(0, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.06);
 }
 
 .terminal-tab.active {
-  color: var(--terminal-primary);
-  background: rgba(0, 255, 255, 0.1);
-  border-color: var(--terminal-border);
+  color: var(--accent-orange);
+  background: rgba(255, 107, 53, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
   border-bottom-color: transparent;
-  text-shadow: 0 0 5px var(--terminal-glow);
 }
 
 .terminal-tab.active::before {
-  transform: scaleX(1);
+  transform: translateX(-50%) scaleX(1);
 }
 
 /* ===== Status Line ===== */
